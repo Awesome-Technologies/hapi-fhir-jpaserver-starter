@@ -31,6 +31,9 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 
+import org.json.JSONObject;
+import org.json.JSONArray;
+
 /*
  * %%
  * Copyright (C) 2020 Awesome Technologies Innovationslabor GmbH
@@ -225,19 +228,30 @@ public class PushInterceptor {
       conn.setRequestProperty("Content-Type", "application/json");
 
       // build content
-      String devicelist = "[";
-      for (String pt : pushTokens) {
-        devicelist += String.format("{\"app_id\": \"care.amp.intensiv\",\"pushkey\": \"%s\"}", pt);
-      }
-      devicelist += "]";
+      JSONArray devicelist = new JSONArray();
 
-      String content = String.format("{\"notification\": {\"sender\": \"%s\", \"type\": \"%s\", \"servicerequest_id\": %d, \"patient_id\":%d, \"devices\": %s}}", sender, type, serviceRequestId, patientId, devicelist);
+      for (String pt : pushTokens) {
+        JSONObject device = new JSONObject();
+        device.put("app_id", "care.amp.intensiv");
+        device.put("pushkey", pt);
+        devicelist.put(device);
+      }
+
+      JSONObject notification = new JSONObject();
+      notification.put("sender", sender);
+      notification.put("type", type);
+      notification.put("servicerequest_id", serviceRequestId);
+      notification.put("patient_id", patientId);
+      notification.put("devices", devicelist);
+
+      JSONObject content = new JSONObject();
+      content.put("notification", notification);
 
       OutputStream os = conn.getOutputStream();
-      os.write(content.getBytes());
+      os.write(content.toString().getBytes());
       os.flush();
 
-      if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
+      if (conn.getResponseCode() != HttpURLConnection.HTTP_OK && conn.getResponseCode() != HttpURLConnection.HTTP_BAD_REQUEST) {
         throw new RuntimeException("Failed : HTTP error code : "
           + conn.getResponseCode());
       }
