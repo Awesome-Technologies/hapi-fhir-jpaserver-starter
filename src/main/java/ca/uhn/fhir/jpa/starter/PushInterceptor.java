@@ -20,6 +20,8 @@ import org.hl7.fhir.r4.model.Organization;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
 import org.hl7.fhir.r4.model.ServiceRequest.ServiceRequestStatus;
+import org.hl7.fhir.r4.model.CommunicationRequest;
+import org.hl7.fhir.r4.model.CommunicationRequest.CommunicationRequestStatus;
 import org.hl7.fhir.r4.model.Endpoint;
 import org.hl7.fhir.r4.model.Endpoint.EndpointStatus;
 import org.hl7.fhir.r4.model.ContactPoint;
@@ -102,12 +104,21 @@ public class PushInterceptor {
     //resourceName
     if (theRequestDetails.getResourceName() != null) {
       myResourceName = theRequestDetails.getResourceName();
-      // only handle ServiceRequests
-      if (!myResourceName.startsWith("ServiceRequest")) {
+      // handle ServiceRequests
+      if (myResourceName.startsWith("ServiceRequest")) {
+        handleServiceRequests(theRequestDetails, myOperationType);
+        return;
+      }
+      // handle CommunicationRequests
+      if (myResourceName.startsWith("CommunicationRequest")) {
+        handleCommunicationRequests(theRequestDetails, myOperationType);
         return;
       }
     }
+  }
 
+
+  private void handleServiceRequests(ServletRequestDetails theRequestDetails, String myOperationType) {
     Reference performer = null;
     List<Reference> endpointList = null;
     List<String> pushTokens = new ArrayList<String>();
@@ -119,7 +130,7 @@ public class PushInterceptor {
     IBaseResource resource = theRequestDetails.getResource();
 
     if (resource == null || !(resource instanceof ServiceRequest)) {
-      myLogger.info("ServiceRequest is not readable");
+      myLogger.warn("ServiceRequest is not readable");
       return;
     }
 
@@ -215,11 +226,122 @@ public class PushInterceptor {
     }
 
     // send push notification to endpoints
-    sendPushNotification(pushTokens, myOperationType, sender, patientId, serviceRequestId, myPushUrl);
+    sendPushNotification(pushTokens, "ServiceRequest", myOperationType, sender, patientId, serviceRequestId, myPushUrl);
+  }
+
+  private void handleCommunicationRequests(ServletRequestDetails theRequestDetails, String myOperationType) {
+    Reference recipient = null;
+    List<Reference> endpointList = null;
+    List<String> pushTokens = new ArrayList<String>();
+    int patientId = 0;
+    int communicationRequestId = 0;
+    IFhirResourceDao dao = null;
+    String sender = "";
+
+    IBaseResource resource = theRequestDetails.getResource();
+
+    if (resource == null || !(resource instanceof CommunicationRequest)) {
+      myLogger.warn("CommunicationRequest is not readable");
+      return;
+    }
+
+    CommunicationRequest myCommunicationRequest = (CommunicationRequest) resource;
+    CommunicationRequestStatus status = myCommunicationRequest.getStatus();
+
+    // check if status is active
+    if (!status.getDisplay().toLowerCase().equals("active")) {
+      myLogger.info("CommunicationRequest status is not active but " + status.getDisplay().toLowerCase());
+      return;
+    }
+
+    // read CommunicationRequest id
+    String[] communicationRequestStrings = myCommunicationRequest.getId().split("/");
+    if (!communicationRequestStrings[0].equals("CommunicationRequest")) {
+      myLogger.info("Reference is not a CommunicationRequest but: " + communicationRequestStrings[0]);
+    } else {
+      communicationRequestId = Integer.parseInt(communicationRequestStrings[1].trim());
+    }
+
+    // read patient id
+    Reference patient = myCommunicationRequest.getSubject();
+    String[] patientStrings = patient.getReference().split("/");
+    if (!patientStrings[0].equals("Patient")){
+      myLogger.info("Reference is not an Patient but: " + patientStrings[0]);
+    } else {
+      patientId = Integer.parseInt(patientStrings[1].trim());
+    }
+
+    // find recipient organization
+    recipient = myCommunicationRequest.getRecipientFirstRep();
+
+    if (recipient != null) {
+      String[] recipientStrings = recipient.getReference().split("/");
+      if (!recipientStrings[0].equals("Organization")) {
+        myLogger.info("recipient Reference is not an Organization but: " + recipientStrings[0]);
+        return;
+      }
+      dao = myDaoRegistry.getResourceDao("Organization");
+      resource = dao.read(new IdDt(Integer.parseInt(recipientStrings[1].trim())));
+      if (resource instanceof Organization) {
+        Organization myOrganization = (Organization) resource;
+        // read endpoints from Organization
+        endpointList = myOrganization.getEndpoint();
+      }
+    }
+
+    // find requester organization
+    Reference requester = null;
+    requester = myCommunicationRequest.getRequester();
+    if (requester != null) {
+      String[] requesterStrings = requester.getReference().split("/");
+      if (!requesterStrings[0].equals("Organization")) {
+        myLogger.info("requester Reference is not an Organization but: " + requesterStrings[0]);
+        return;
+      }
+      dao = myDaoRegistry.getResourceDao("Organization");
+      resource = dao.read(new IdDt(Integer.parseInt(requesterStrings[1].trim())));
+      if (resource instanceof Organization) {
+        Organization myOrganization = (Organization) resource;
+        // read name from Organization
+        sender = myOrganization.getName();
+        if (sender == null){
+          sender = "";
+        }
+      }
+    }
+
+    // find endpoints of organization
+    dao = myDaoRegistry.getResourceDao("Endpoint");
+
+    for (Reference ref : endpointList) {
+      String[] endpointStrings = ref.getReference().split("/");
+      if (!endpointStrings[0].equals("Endpoint")) {
+        myLogger.info("Reference is not an Endpoint but: " + endpointStrings[0]);
+        return;
+      }
+      resource = dao.read(new IdDt(Integer.parseInt(endpointStrings[1].trim())));
+      if (resource instanceof Endpoint) {
+        Endpoint myEndpoint = (Endpoint) resource;
+        EndpointStatus myStatus = myEndpoint.getStatus();
+        // ignore non-active endpoints
+        if (myStatus.toCode().toLowerCase() != "active") {
+          continue;
+        }
+
+        List<ContactPoint> myContactPoints = myEndpoint.getContact();
+        for (ContactPoint cp : myContactPoints) {
+          pushTokens.add(cp.getValue());
+          myLogger.info("Add push token: " + cp.getValue());
+        }
+      }
+    }
+
+    // send push notification to endpoints
+    sendPushNotification(pushTokens, "CommunicationRequest", myOperationType, sender, patientId, communicationRequestId, myPushUrl);
   }
 
   // send a push notification via Sygnal to APNS
-  private void sendPushNotification(List<String> pushTokens, String type, String sender, int patientId, int serviceRequestId, String pushUrl) {
+  private void sendPushNotification(List<String> pushTokens, String resource, String type, String sender, int patientId, int requestId, String pushUrl) {
     try {
       URL url = new URL(pushUrl);
       HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -239,8 +361,9 @@ public class PushInterceptor {
 
       JSONObject notification = new JSONObject();
       notification.put("sender", sender);
+      notification.put("resource", resource);
       notification.put("type", type);
-      notification.put("servicerequest_id", serviceRequestId);
+      notification.put("request_id", requestId);
       notification.put("patient_id", patientId);
       notification.put("devices", devicelist);
 
