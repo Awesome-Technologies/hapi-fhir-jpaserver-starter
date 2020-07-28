@@ -122,10 +122,10 @@ public class PushInterceptor {
     Reference performer = null;
     List<Reference> endpointList = null;
     List<String> pushTokens = new ArrayList<String>();
-    int patientId = 0;
-    int serviceRequestId = 0;
     IFhirResourceDao dao = null;
-    String sender = "";
+    String patientId = "";
+    String serviceRequestId = "";
+    String senderId = "";
 
     IBaseResource resource = theRequestDetails.getResource();
 
@@ -143,34 +143,35 @@ public class PushInterceptor {
       return;
     }
 
-    // read serviceRequest id
-    String[] serviceRequestStrings = myServiceRequest.getId().split("/");
-    if (!serviceRequestStrings[0].equals("ServiceRequest")) {
-      myLogger.info("Reference is not an ServiceRequest but: " + serviceRequestStrings[0]);
-    } else {
-      serviceRequestId = Integer.parseInt(serviceRequestStrings[1].trim());
+    // read CommunicationRequest id
+    final String requestType = myServiceRequest.getId().split("/")[0];
+    if (!requestType.equals("ServiceRequest")) {
+      myLogger.info("Reference is not an ServiceRequest but: " + requestType);
+      return;
     }
+
+    serviceRequestId = myServiceRequest.getId();
 
     // read patient id
     Reference patient = myServiceRequest.getSubject();
-    String[] patientStrings = patient.getReference().split("/");
-    if(!patientStrings[0].equals("Patient")){
-      myLogger.info("Reference is not an Patient but: " + patientStrings[0]);
+    final String referenceType = patient.getReference().split("/")[0];
+    if(!referenceType.equals("Patient")){
+      myLogger.info("Reference is not an Patient but: " + referenceType);
     } else {
-      patientId = Integer.parseInt(patientStrings[1].trim());
+      patientId = patient.getReference();
     }
 
-    // find performer organization
+    // find recipient organization
     performer = myServiceRequest.getPerformerFirstRep();
 
     if (performer != null) {
-      String[] performerStrings = performer.getReference().split("/");
-      if (!performerStrings[0].equals("Organization")) {
-        myLogger.info("performer Reference is not an Organization but: " + performerStrings[0]);
+      final String performerType = performer.getReference().split("/")[0];
+      if (!performerType.equals("Organization")) {
+        myLogger.info("performer Reference is not an Organization but: " + performerType);
         return;
       }
       dao = myDaoRegistry.getResourceDao("Organization");
-      resource = dao.read(new IdDt(Integer.parseInt(performerStrings[1].trim())));
+      resource = dao.read(new IdDt(performer.getReference()));
       if (resource instanceof Organization) {
         Organization myOrganization = (Organization) resource;
         // read endpoints from Organization
@@ -182,20 +183,15 @@ public class PushInterceptor {
     Reference requester = null;
     requester = myServiceRequest.getRequester();
     if (requester != null) {
-      String[] requesterStrings = requester.getReference().split("/");
-      if (!requesterStrings[0].equals("Organization")) {
-        myLogger.info("requester Reference is not an Organization but: " + requesterStrings[0]);
+      final String requesterType = requester.getReference().split("/")[0];
+      if (!requesterType.equals("Organization")) {
+        myLogger.info("requester Reference is not an Organization but: " + requesterType);
         return;
       }
       dao = myDaoRegistry.getResourceDao("Organization");
-      resource = dao.read(new IdDt(Integer.parseInt(requesterStrings[1].trim())));
+      resource = dao.read(new IdDt(requester.getReference()));
       if (resource instanceof Organization) {
-        Organization myOrganization = (Organization) resource;
-        // read name from Organization
-        sender = myOrganization.getName();
-        if (sender == null){
-          sender = "";
-        }
+        senderId = requester.getReference();
       }
     }
 
@@ -203,12 +199,12 @@ public class PushInterceptor {
     dao = myDaoRegistry.getResourceDao("Endpoint");
 
     for (Reference ref : endpointList) {
-      String[] endpointStrings = ref.getReference().split("/");
-      if (!endpointStrings[0].equals("Endpoint")) {
-        myLogger.info("Reference is not an Endpoint but: " + endpointStrings[0]);
+      final String endpointType = ref.getReference().split("/")[0];
+      if (!endpointType.equals("Endpoint")) {
+        myLogger.info("Reference is not an Endpoint but: " + endpointType);
         return;
       }
-      resource = dao.read(new IdDt(Integer.parseInt(endpointStrings[1].trim())));
+      resource = dao.read(new IdDt(ref.getReference()));
       if (resource instanceof Endpoint) {
         Endpoint myEndpoint = (Endpoint) resource;
         EndpointStatus myStatus = myEndpoint.getStatus();
@@ -226,17 +222,17 @@ public class PushInterceptor {
     }
 
     // send push notification to endpoints
-    sendPushNotification(pushTokens, "ServiceRequest", myOperationType, sender, patientId, serviceRequestId, myPushUrl);
+    sendPushNotification(pushTokens, myOperationType, senderId, patientId, serviceRequestId, myPushUrl);
   }
 
   private void handleCommunicationRequests(ServletRequestDetails theRequestDetails, String myOperationType) {
     Reference recipient = null;
     List<Reference> endpointList = null;
     List<String> pushTokens = new ArrayList<String>();
-    int patientId = 0;
-    int communicationRequestId = 0;
     IFhirResourceDao dao = null;
-    String sender = "";
+    String patientId = "";
+    String communicationRequestId = "";
+    String senderId = "";
 
     IBaseResource resource = theRequestDetails.getResource();
 
@@ -248,6 +244,15 @@ public class PushInterceptor {
     CommunicationRequest myCommunicationRequest = (CommunicationRequest) resource;
     CommunicationRequestStatus status = myCommunicationRequest.getStatus();
 
+    // read CommunicationRequest id
+    final String requestType = myCommunicationRequest.getId().split("/")[0];
+    if (!requestType.equals("CommunicationRequest")) {
+      myLogger.info("Reference is not an CommunicationRequest but: " + requestType);
+      return;
+    }
+
+    communicationRequestId = myCommunicationRequest.getId();
+
     // check if status is active
     if (!status.getDisplay().toLowerCase().equals("active")) {
       myLogger.info("CommunicationRequest status is not active but " + status.getDisplay().toLowerCase());
@@ -258,31 +263,31 @@ public class PushInterceptor {
     String[] communicationRequestStrings = myCommunicationRequest.getId().split("/");
     if (!communicationRequestStrings[0].equals("CommunicationRequest")) {
       myLogger.info("Reference is not a CommunicationRequest but: " + communicationRequestStrings[0]);
-    } else {
-      communicationRequestId = Integer.parseInt(communicationRequestStrings[1].trim());
     }
 
     // read patient id
     Reference patient = myCommunicationRequest.getSubject();
-    String[] patientStrings = patient.getReference().split("/");
-    if (!patientStrings[0].equals("Patient")){
-      myLogger.info("Reference is not an Patient but: " + patientStrings[0]);
+
+    final String patientType = patient.getReference().split("/")[0];
+    if(!patientType.equals("Patient")){
+      myLogger.info("Reference is not an Patient but: " + patientType);
     } else {
-      patientId = Integer.parseInt(patientStrings[1].trim());
+      patientId = patient.getReference();
     }
 
     // find recipient organization
     recipient = myCommunicationRequest.getRecipientFirstRep();
 
     if (recipient != null) {
-      String[] recipientStrings = recipient.getReference().split("/");
-      if (!recipientStrings[0].equals("Organization")) {
-        myLogger.info("recipient Reference is not an Organization but: " + recipientStrings[0]);
+      final String recipientType = recipient.getReference().split("/")[0];
+      if (!recipientType.equals("Organization")) {
+        myLogger.info("recipient Reference is not an Organization but: " + recipientType);
         return;
       }
       dao = myDaoRegistry.getResourceDao("Organization");
-      resource = dao.read(new IdDt(Integer.parseInt(recipientStrings[1].trim())));
+      resource = dao.read(new IdDt(recipient.getReference()));
       if (resource instanceof Organization) {
+        myLogger.info("org ");
         Organization myOrganization = (Organization) resource;
         // read endpoints from Organization
         endpointList = myOrganization.getEndpoint();
@@ -293,20 +298,15 @@ public class PushInterceptor {
     Reference requester = null;
     requester = myCommunicationRequest.getRequester();
     if (requester != null) {
-      String[] requesterStrings = requester.getReference().split("/");
-      if (!requesterStrings[0].equals("Organization")) {
-        myLogger.info("requester Reference is not an Organization but: " + requesterStrings[0]);
+      final String requesterType = requester.getReference().split("/")[0];
+      if (!requesterType.equals("Organization")) {
+        myLogger.info("requester Reference is not an Organization but: " + requesterType);
         return;
       }
       dao = myDaoRegistry.getResourceDao("Organization");
-      resource = dao.read(new IdDt(Integer.parseInt(requesterStrings[1].trim())));
+      resource = dao.read(new IdDt(requester.getReference()));
       if (resource instanceof Organization) {
-        Organization myOrganization = (Organization) resource;
-        // read name from Organization
-        sender = myOrganization.getName();
-        if (sender == null){
-          sender = "";
-        }
+        senderId = requester.getReference();
       }
     }
 
@@ -314,12 +314,12 @@ public class PushInterceptor {
     dao = myDaoRegistry.getResourceDao("Endpoint");
 
     for (Reference ref : endpointList) {
-      String[] endpointStrings = ref.getReference().split("/");
-      if (!endpointStrings[0].equals("Endpoint")) {
-        myLogger.info("Reference is not an Endpoint but: " + endpointStrings[0]);
+      final String endpointType = ref.getReference().split("/")[0];
+      if (!endpointType.equals("Endpoint")) {
+        myLogger.info("Reference is not an Endpoint but: " + endpointType);
         return;
       }
-      resource = dao.read(new IdDt(Integer.parseInt(endpointStrings[1].trim())));
+      resource = dao.read(new IdDt(ref.getReference()));
       if (resource instanceof Endpoint) {
         Endpoint myEndpoint = (Endpoint) resource;
         EndpointStatus myStatus = myEndpoint.getStatus();
@@ -337,11 +337,11 @@ public class PushInterceptor {
     }
 
     // send push notification to endpoints
-    sendPushNotification(pushTokens, "CommunicationRequest", myOperationType, sender, patientId, communicationRequestId, myPushUrl);
+    sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationRequestId, myPushUrl);
   }
 
   // send a push notification via Sygnal to APNS
-  private void sendPushNotification(List<String> pushTokens, String resource, String type, String sender, int patientId, int requestId, String pushUrl) {
+  private void sendPushNotification(List<String> pushTokens, String type, String senderId, String patientId, String requestId, String pushUrl) {
     try {
       URL url = new URL(pushUrl);
       HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -360,11 +360,10 @@ public class PushInterceptor {
       }
 
       JSONObject notification = new JSONObject();
-      notification.put("sender", sender);
-      notification.put("resource", resource);
+      notification.put("sender", senderId);
       notification.put("type", type);
-      notification.put("request_id", requestId);
-      notification.put("patient_id", patientId);
+      notification.put("request", requestId);
+      notification.put("patient", patientId);
       notification.put("devices", devicelist);
 
       JSONObject content = new JSONObject();
