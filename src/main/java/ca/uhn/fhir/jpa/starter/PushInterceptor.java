@@ -60,6 +60,8 @@ import org.json.JSONArray;
  */
 @Interceptor
 public class PushInterceptor {
+  private final String PUSH_APP_ID_NORMAL = "care.amp.intensiv";
+  private final String PUSH_APP_ID_VOIP = "care.amp.intensiv.voip";
   private final DaoRegistry myDaoRegistry;
   private final String myPushUrl;
 
@@ -215,14 +217,15 @@ public class PushInterceptor {
 
         List<ContactPoint> myContactPoints = myEndpoint.getContact();
         for (ContactPoint cp : myContactPoints) {
-          pushTokens.add(cp.getValue());
-          myLogger.info("Added pushtoken: " + cp.getValue());
+          JSONObject json = new JSONObject(cp.getValue());
+          pushTokens.add(json.getString("push_token"));
+          myLogger.info("Add push token: " + json.getString("push_token"));
         }
       }
     }
 
     // send push notification to endpoints
-    sendPushNotification(pushTokens, myOperationType, senderId, patientId, serviceRequestId, myPushUrl);
+    sendPushNotification(pushTokens, myOperationType, senderId, patientId, serviceRequestId, myPushUrl, PUSH_APP_ID_NORMAL);
   }
 
   private void handleCommunicationRequests(ServletRequestDetails theRequestDetails, String myOperationType) {
@@ -330,18 +333,22 @@ public class PushInterceptor {
 
         List<ContactPoint> myContactPoints = myEndpoint.getContact();
         for (ContactPoint cp : myContactPoints) {
-          pushTokens.add(cp.getValue());
-          myLogger.info("Add push token: " + cp.getValue());
+          JSONObject json = new JSONObject(cp.getValue());
+          pushTokens.add(json.getString("voip_token"));
+          myLogger.info("Add voip token: " + json.getString("voip_token"));
         }
       }
     }
 
-    // send push notification to endpoints
-    sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationRequestId, myPushUrl);
+    // for newly created CommunicationRequests send a voip push
+    String appId = myOperationType.equals("create") ? PUSH_APP_ID_VOIP : PUSH_APP_ID_NORMAL;
+
+    // send a push notification via Sygnal to APNS
+    sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationRequestId, myPushUrl, appId);
   }
 
   // send a push notification via Sygnal to APNS
-  private void sendPushNotification(List<String> pushTokens, String type, String senderId, String patientId, String requestId, String pushUrl) {
+  private void sendPushNotification(List<String> pushTokens, String type, String senderId, String patientId, String requestId, String pushUrl, String appId) {
     try {
       URL url = new URL(pushUrl);
       HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -354,7 +361,7 @@ public class PushInterceptor {
 
       for (String pt : pushTokens) {
         JSONObject device = new JSONObject();
-        device.put("app_id", "care.amp.intensiv");
+        device.put("app_id", appId);
         device.put("pushkey", pt);
         devicelist.put(device);
       }
