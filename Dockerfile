@@ -9,7 +9,9 @@ RUN /tmp/apache-maven-3.6.2/bin/mvn dependency:resolve
 RUN /tmp/apache-maven-3.6.2/bin/mvn install -DskipTests
 
 WORKDIR /tmp/hapi-fhir-jpaserver-starter
-COPY . /tmp/hapi-fhir-jpaserver-starter
+
+COPY . .
+
 RUN /tmp/apache-maven-3.6.2/bin/mvn clean install -DskipTests
 
 FROM tomcat:9-jre11
