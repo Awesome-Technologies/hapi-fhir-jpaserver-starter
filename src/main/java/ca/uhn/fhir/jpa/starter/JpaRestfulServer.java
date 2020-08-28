@@ -26,6 +26,12 @@ public class JpaRestfulServer extends BaseJpaRestfulServer {
     PushInterceptor pushInterceptor = new PushInterceptor(daoRegistry, HapiProperties.getPushUrl());
     registerInterceptor(pushInterceptor);
 
+    /*
+     * Add authorization interceptor
+     */
+    KeyCloakInterceptor authInterceptor = new KeyCloakInterceptor();
+    registerInterceptor(authInterceptor);
+
   }
 
 }
