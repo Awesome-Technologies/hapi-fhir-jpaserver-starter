@@ -27,11 +27,22 @@ public class JpaRestfulServer extends BaseJpaRestfulServer {
     registerInterceptor(pushInterceptor);
 
     /*
+     * Add authentication interceptor
+     */
+    KeyCloakInterceptor authNInterceptor = new KeyCloakInterceptor();
+    registerInterceptor(authNInterceptor);
+
+    /*
      * Add authorization interceptor
      */
-    KeyCloakInterceptor authInterceptor = new KeyCloakInterceptor();
-    registerInterceptor(authInterceptor);
+    ResourceAuthorizationInterceptor authZInterceptor = new ResourceAuthorizationInterceptor(daoRegistry);
+    registerInterceptor(authZInterceptor);
 
+    /*
+     * Add search narrowing interceptor
+     */
+    PatientSearchNarrowingInterceptor patientSearchInterceptor = new PatientSearchNarrowingInterceptor(daoRegistry);
+    registerInterceptor(patientSearchInterceptor);
   }
 
 }

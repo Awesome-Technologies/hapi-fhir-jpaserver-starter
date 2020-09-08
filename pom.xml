@@ -58,6 +58,13 @@
             <version>42.2.9</version>
         </dependency>
 
+        <!-- Needed for JWT authentication -->
+        <dependency>
+            <groupId>com.auth0</groupId>
+            <artifactId>java-jwt</artifactId>
+            <version>3.10.3</version>
+        </dependency>
+
         <!-- Needed for Email subscriptions -->
         <dependency>
             <groupId>com.sun.mail</groupId>
