@@ -1,20 +1,13 @@
-FROM hapiproject/hapi:base as build-hapi
-
-ARG HAPI_FHIR_URL=https://github.com/jamesagnew/hapi-fhir/
-ARG HAPI_FHIR_BRANCH=master
-
-RUN git clone --branch ${HAPI_FHIR_BRANCH} ${HAPI_FHIR_URL}
-WORKDIR /tmp/hapi-fhir/
-RUN /tmp/apache-maven-3.6.2/bin/mvn dependency:resolve
-RUN /tmp/apache-maven-3.6.2/bin/mvn install -DskipTests
-
+FROM maven:3.6.3-jdk-11-slim as build-hapi
 WORKDIR /tmp/hapi-fhir-jpaserver-starter
 
-COPY . .
+COPY pom.xml .
+RUN mvn dependency:go-offline
 
-RUN /tmp/apache-maven-3.6.2/bin/mvn clean install -DskipTests
+COPY src/ /tmp/hapi-fhir-jpaserver-starter/src/
+RUN mvn clean install -DskipTests
 
-FROM tomcat:9-jre11
+FROM tomcat:9.0.37-jdk11-openjdk-slim-buster
 
 RUN mkdir -p /data/hapi/lucenefiles && chmod 775 /data/hapi/lucenefiles
 COPY --from=build-hapi /tmp/hapi-fhir-jpaserver-starter/target/*.war /usr/local/tomcat/webapps/
