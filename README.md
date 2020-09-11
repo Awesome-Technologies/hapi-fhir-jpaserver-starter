@@ -21,7 +21,7 @@ docker pull hapiproject/hapi:latest
 docker run -p 8080:8080 hapiproject/hapi:tagname
 ```
 
-This will run the docker image with the default configuration, mapping port 8080 from the container to port 8080 in the host. Once running, you can access `http://localhost:8080/hapi-fhir-jpaserver/fhir` in the browser to access the HAPI FHIR server's UI.
+This will run the docker image with the default configuration, mapping port 8080 from the container to port 8080 in the host. Once running, you can access `http://localhost:8080/fhir` in the browser to access the HAPI FHIR server's UI.
 
 If you change the mapped port, you need to change the configuration used by HAPI to have the correct `server_address` property/value.
 
@@ -29,7 +29,7 @@ If you change the mapped port, you need to change the configuration used by HAPI
 
 You can customize HAPI directly from the `run` command using environment variables. For example:
 
-`docker run -p 8090:8080 -e server_address=http://localhost:8090/hapi-fhir-jpaserver/fhir hapiproject/hapi:tagname`
+`docker run -p 8090:8080 -e server_address=http://localhost:8090/fhir hapiproject/hapi:tagname`
 
 HAPI looks in the environment variables for properties in the [hapi.properties](https://github.com/hapifhir/hapi-fhir-jpaserver-starter/blob/master/src/main/resources/hapi.properties) file.
 
@@ -73,7 +73,7 @@ mvn jetty:run
 
 Then, browse to the following link to use the server:
 
-[http://localhost:8080/hapi-fhir-jpaserver/](http://localhost:8080/hapi-fhir-jpaserver/)
+[http://localhost:8080/](http://localhost:8080/)
 
 If you need to run this server on a different port (using Maven), you can change the port in the run command as follows:
 
@@ -151,7 +151,7 @@ Again, browse to the following link to use the server (note that the port 8080 m
 
 Docker compose is a simple option to build and deploy container. To deploy with docker compose, you should build the project
 with `mvn clean install` and then bring up the containers with `docker-compose up -d --build`. The server can be
-reached at http://localhost:8080/hapi-fhir-jpaserver/.
+reached at http://localhost:8080/.
 
 In order to use another port, change the `ports` parameter
 inside `docker-compose.yml` to `8888:8080`, where 8888 is a port of your choice.
