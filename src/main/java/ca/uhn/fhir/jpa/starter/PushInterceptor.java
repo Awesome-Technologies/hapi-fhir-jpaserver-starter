@@ -155,7 +155,7 @@ public class PushInterceptor {
       return;
     }
     // read endpoints from Organization
-    final List<String> pushTokens = getPushTokens(performer);
+    final List<String> pushTokens = getPushTokens(performer, "push_token");
 
     // send push notification to endpoints
     sendPushNotification(pushTokens, theOperationType, senderId, patientId, serviceRequestId, PUSH_APP_ID_NORMAL);
@@ -216,11 +216,18 @@ public class PushInterceptor {
       ourLog.warn("No performer set");
       return;
     }
-    // read endpoints from Organization
-    final List<String> pushTokens = getPushTokens(recipient);
 
-    // for newly created CommunicationRequests send a voip push
-    String app_id = myOperationType.equals("create") ? PUSH_APP_ID_VOIP : PUSH_APP_ID_NORMAL;
+    String app_id = PUSH_APP_ID_NORMAL;
+    final List<String> pushTokens;
+
+    if (myOperationType.equals("create")) {
+      // for newly created CommunicationRequests send a voip push
+      app_id = PUSH_APP_ID_VOIP;
+      // read endpoints from Organization
+      pushTokens = getPushTokens(recipient, "voip_token");
+    } else {
+      pushTokens = getPushTokens(recipient, "push_token");
+    }
 
     // send a push notification via Sygnal to APNS
     sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationRequestId, app_id);
@@ -230,7 +237,7 @@ public class PushInterceptor {
     return reference.split("/")[0];
   }
 
-  private List<String> getPushTokens(Reference organization) {
+  private List<String> getPushTokens(Reference organization, String token_type) {
     List<String> pushTokens = new ArrayList<String>();
     final String organizationId = organization.getReference();
     final String referenceType = getReferenceType(organizationId);
@@ -267,11 +274,15 @@ public class PushInterceptor {
         continue;
       }
 
+      if (!myEndpoint.getConnectionType().getSystem().equals("https://developer.apple.com/notifications/")) {
+        continue;
+      }
+
       // we store the push tokens as ContactPoints
       for (ContactPoint cp : myEndpoint.getContact()) {
         JSONObject json = new JSONObject(cp.getValue());
-        pushTokens.add(json.getString("push_token"));
-        ourLog.info("Add push token: " + json.getString("push_token"));
+        pushTokens.add(json.getString(token_type));
+        ourLog.info("Add token: " + json.getString(token_type));
       }
     }
     return pushTokens;
