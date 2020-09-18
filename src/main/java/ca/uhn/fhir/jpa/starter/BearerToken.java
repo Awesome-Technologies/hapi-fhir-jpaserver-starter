@@ -59,6 +59,18 @@ public class BearerToken {
     return new String(decoder.decode(jwt.getPayload()));
   }
 
+  public Boolean isAdmin() {
+    JSONObject obj = new JSONObject(getPayloadJSON());
+    // extract the role
+    final JSONArray roles = obj.getJSONObject("realm_access").getJSONArray("roles");
+
+    for (int i = 0; i < roles.length(); i++) {
+      IdDt id = new IdDt(roles.getString(i));
+      if (id.getResourceType().equals("Administrator")) return true;
+    }
+    return false;
+  }
+
   public List<IdDt> getAuthorizedOrganizations() {
     List<IdDt> myOrgIds = new ArrayList<>();
     try {
@@ -67,11 +79,11 @@ public class BearerToken {
       JSONObject obj = new JSONObject(getPayloadJSON());
       // extract the role
       final JSONArray roles = obj.getJSONObject("realm_access").getJSONArray("roles");
-      
+
       for (int i = 0; i < roles.length(); i++) {
         IdDt id = new IdDt(roles.getString(i));
         if (id.getResourceType().equals("Organization")) myOrgIds.add(id);
-      } 
+      }
       if (myOrgIds.size() == 0) {  // Throw an HTTP 401
         throw new AuthenticationException("No access role defined");
       }
