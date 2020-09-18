@@ -2,7 +2,7 @@
  * Copyright (C) 2020  Awesome Technologies Innovationslabor GmbH. All rights reserved.
  *
  *
- * PatientAuthorizationInterceptor.java is free software: you can redistribute it and/or modify it under the
+ * ResourceAuthorizationInterceptor.java is free software: you can redistribute it and/or modify it under the
  * terms of the Apache License, Version 2.0 (the License);
  *
  * http://www.apache.org/licenses/LICENSE-2.0
@@ -19,7 +19,7 @@
  *
  * @author Awesome Technologies Innovationslabor GmbH
  *
- * Interceptor which checks the authorization to access a patient resource
+ * Interceptor which checks the authorization to access a resource
  */
 
 package ca.uhn.fhir.jpa.starter;

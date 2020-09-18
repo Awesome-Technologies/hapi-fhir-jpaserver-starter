@@ -2,7 +2,7 @@
  * Copyright (C) 2020  Awesome Technologies Innovationslabor GmbH. All rights reserved.
  *
  *
- * PatientAuthorizationInterceptor.java is free software: you can redistribute it and/or modify it under the
+ * PatientSearchNarrowingInterceptor.java is free software: you can redistribute it and/or modify it under the
  * terms of the Apache License, Version 2.0 (the License);
  *
  * http://www.apache.org/licenses/LICENSE-2.0
