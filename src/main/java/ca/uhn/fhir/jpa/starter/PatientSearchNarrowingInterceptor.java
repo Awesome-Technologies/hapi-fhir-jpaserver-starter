@@ -31,6 +31,7 @@ import java.util.Set;
 import org.apache.commons.lang3.Validate;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.instance.model.api.IIdType;
+import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Organization;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
@@ -38,7 +39,6 @@ import org.hl7.fhir.r4.model.ServiceRequest;
 import ca.uhn.fhir.jpa.api.dao.DaoRegistry;
 import ca.uhn.fhir.jpa.api.dao.IFhirResourceDao;
 import ca.uhn.fhir.jpa.searchparam.SearchParameterMap;
-import ca.uhn.fhir.model.primitive.IdDt;
 import ca.uhn.fhir.rest.api.server.IBundleProvider;
 import ca.uhn.fhir.rest.api.server.RequestDetails;
 import ca.uhn.fhir.rest.server.exceptions.AuthenticationException;
@@ -72,7 +72,7 @@ public class PatientSearchNarrowingInterceptor extends SearchNarrowingIntercepto
     ourLog.info(authHeader);
 
     final BearerToken bearerToken = new BearerToken(authHeader);
-    final List<IdDt> myOrgIds = bearerToken.getAuthorizedOrganizations();
+    final List<IdType> myOrgIds = bearerToken.getAuthorizedOrganizations();
 
     // get all organizations
     Set<IIdType> authorizedOrganizationList = new HashSet<>();
@@ -81,7 +81,7 @@ public class PatientSearchNarrowingInterceptor extends SearchNarrowingIntercepto
 
     // check if our organizations can be found in the DAO
     for (IIdType myOrg : myOrgIds) {
-      IBaseResource orgRes = organizationDao.read(myOrg, theRequestDetails);
+      IBaseResource orgRes = organizationDao.read(myOrg);
       if (!orgRes.isEmpty()) {
         authorizedOrganizationList.add(myOrg);
         ourLog.info("Added " + myOrg.getValue());
@@ -98,7 +98,7 @@ public class PatientSearchNarrowingInterceptor extends SearchNarrowingIntercepto
       throw new AuthenticationException("No valid access role: Organization not found");
     }
 
-    Set<IIdType> authorizedPatientList = new HashSet<>();
+    Set<String> authorizedPatientList = new HashSet<>();
 
     // search all ServiceRequests for the organization
     IFhirResourceDao<?> serviceRequestdao = myDaoRegistry.getResourceDao("ServiceRequest");
@@ -113,13 +113,13 @@ public class PatientSearchNarrowingInterceptor extends SearchNarrowingIntercepto
       List<Reference> performers = sr.getPerformer();
 
       for (IIdType authorizedOrganization : authorizedOrganizationList) {
-        if (requester != null && authorizedOrganization.equals(requester.getReferenceElement())) {
-          authorizedPatientList.add(sr.getSubject().getReferenceElement());
+        if (requester != null && authorizedOrganization.getValue().equals(requester.getReferenceElement().getValue())) {
+          authorizedPatientList.add(sr.getSubject().getReferenceElement().getValue());
           ourLog.info("Added " + sr.getSubject().getReferenceElement());
         } else { // no need to look into performers if requester already matched
           for (Reference performer : performers) {
-            if (performer != null && authorizedOrganization.equals(performer.getReferenceElement())) {
-              authorizedPatientList.add(sr.getSubject().getReferenceElement());
+            if (performer != null && authorizedOrganization.getValue().equals(performer.getReferenceElement().getValue())) {
+              authorizedPatientList.add(sr.getSubject().getReferenceElement().getValue());
               ourLog.info("Added " + sr.getSubject().getReferenceElement());
             }
           }

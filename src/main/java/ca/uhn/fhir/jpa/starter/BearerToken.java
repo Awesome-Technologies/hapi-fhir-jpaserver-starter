@@ -24,7 +24,7 @@
 
 package ca.uhn.fhir.jpa.starter;
 
-import ca.uhn.fhir.model.primitive.IdDt;
+import org.hl7.fhir.r4.model.IdType;
 import ca.uhn.fhir.rest.server.exceptions.AuthenticationException;
 
 import java.util.ArrayList;
@@ -65,14 +65,13 @@ public class BearerToken {
     final JSONArray roles = obj.getJSONObject("realm_access").getJSONArray("roles");
 
     for (int i = 0; i < roles.length(); i++) {
-      IdDt id = new IdDt(roles.getString(i));
-      if (id.getResourceType().equals("Administrator")) return true;
+      if (roles.getString(i).equals("Administrator")) return true;
     }
     return false;
   }
 
-  public List<IdDt> getAuthorizedOrganizations() {
-    List<IdDt> myOrgIds = new ArrayList<>();
+  public List<IdType> getAuthorizedOrganizations() {
+    List<IdType> myOrgIds = new ArrayList<>();
     try {
       // TODO Use JWT claims instead of decoding JSON by hand
       // build a JSON object
@@ -81,8 +80,8 @@ public class BearerToken {
       final JSONArray roles = obj.getJSONObject("realm_access").getJSONArray("roles");
 
       for (int i = 0; i < roles.length(); i++) {
-        IdDt id = new IdDt(roles.getString(i));
-        if (id.getResourceType().equals("Organization")) myOrgIds.add(id);
+        IdType id = new IdType(roles.getString(i));
+        if (id.hasResourceType() && id.getResourceType().equals("Organization")) myOrgIds.add(id);
       }
       if (myOrgIds.size() == 0) {  // Throw an HTTP 401
         throw new AuthenticationException("No access role defined");

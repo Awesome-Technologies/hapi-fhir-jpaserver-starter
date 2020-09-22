@@ -24,6 +24,7 @@
 
 package ca.uhn.fhir.jpa.starter;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -31,6 +32,7 @@ import java.util.Set;
 import org.apache.commons.lang3.Validate;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.instance.model.api.IIdType;
+import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.CommunicationRequest;
 import org.hl7.fhir.r4.model.DiagnosticReport;
 import org.hl7.fhir.r4.model.Organization;
@@ -72,7 +74,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     ourLog.info(authHeader);
 
     final BearerToken bearerToken = new BearerToken(authHeader);
-    final List<IdDt> myOrgIds = bearerToken.getAuthorizedOrganizations();
+    final List<IdType> myOrgIds = bearerToken.getAuthorizedOrganizations();
 
     // Grant administrators access to everything
     if (bearerToken.isAdmin()) {
@@ -86,7 +88,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
     // check if our organizations can be found in the DAO
     for (IIdType myOrg : myOrgIds) {
-      IBaseResource orgRes = organizationDao.read(myOrg, theRequestDetails);
+      IBaseResource orgRes = organizationDao.read(myOrg);
       if (!orgRes.isEmpty()) {
         authorizedOrganizationList.add(myOrg);
         ourLog.info("Added " + myOrg.getValue());
@@ -101,6 +103,18 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     if (authorizedOrganizationList.isEmpty()) {
       // Throw an HTTP 401
       throw new AuthenticationException("No valid access role: Organization not found");
+    }
+
+    if (theRequestDetails.getResourceName().equals("Organization") || theRequestDetails.getResourceName().equals("Endpoint")) {
+      ourLog.info(authorizedOrganizationList.toString());
+      ourLog.info(organizationEndpointList.toString());
+      return new RuleBuilder()
+         .allow("Read Organization").read().allResources().inCompartment("Organization", authorizedOrganizationList).andThen()
+         .allow("Write Organization").write().allResources().inCompartment("Organization", authorizedOrganizationList).andThen()
+         .allow("Read Endpoint").read().allResources().inCompartment("Endpoint", organizationEndpointList).andThen()
+         .allow("Write Endpoint").write().allResources().inCompartment("Endpoint", organizationEndpointList).andThen()
+         .denyAll("Deny all")
+         .build();
     }
 
     Set<IIdType> authorizedPatientList = new HashSet<>();
@@ -119,14 +133,14 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       List<Reference> performers = sr.getPerformer();
 
       for (IIdType authorizedOrganization : authorizedOrganizationList) {
-        if (requester != null && authorizedOrganization.equals(requester.getReferenceElement())) {
+        if (requester != null && authorizedOrganization.getValue().equals(requester.getReferenceElement().getValue())) {
           authorizedServiceRequestList.add(srRes.getIdElement());
           ourLog.info("Added " + srRes.getIdElement());
           authorizedPatientList.add(sr.getSubject().getReferenceElement());
           ourLog.info("Added " + sr.getSubject().getReferenceElement());
         } else { // no need to look into performers if requester already matched
           for (Reference performer : performers) {
-            if (performer != null && authorizedOrganization.equals(performer.getReferenceElement())) {
+            if (performer != null && authorizedOrganization.getValue().equals(performer.getReferenceElement().getValue())) {
               authorizedServiceRequestList.add(srRes.getIdElement());
               ourLog.info("Added " + srRes.getIdElement());
               authorizedPatientList.add(sr.getSubject().getReferenceElement());
@@ -152,12 +166,12 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       List<Reference> recipients = cr.getRecipient();
 
       for (IIdType authorizedOrganization : authorizedOrganizationList) {
-        if (sender != null && authorizedOrganization.equals(sender.getReferenceElement())) {
+        if (sender != null && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())) {
           authorizedCommunicationRequestList.add(commRes.getIdElement());
           ourLog.info("Added " + commRes.getIdElement());
         } else { // no need to look into recipients if sender already matched
           for (Reference recipient : recipients) {
-            if (recipient != null && authorizedOrganization.equals(recipient.getReferenceElement())) {
+            if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
               authorizedCommunicationRequestList.add(commRes.getIdElement());
               ourLog.info("Added " + commRes.getIdElement());
             }
@@ -182,7 +196,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
       for (IIdType authorizedOrganization : authorizedOrganizationList) {
         for (Reference basedOnRef : basedOn) {
-          if (basedOnRef != null && authorizedOrganization.equals(basedOnRef.getReferenceElement())) {
+          if (basedOnRef != null && authorizedOrganization.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
             authorizedDiagnosticReportList.add(diagRes.getIdElement());
             ourLog.info("Added " + diagRes.getIdElement());
             continue; // TODO also exit outer loop
@@ -204,11 +218,11 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     // Allow the user to read/write anything in their connected patient compartment
     // If a client request doesn't pass either of the above, deny it
 
-    IAuthRuleBuilder ruleBuilder = new RuleBuilder().allow("Read Organization").read().allResources()
-        .inCompartment("Organization", authorizedOrganizationList).andThen().allow("Write Organization").write()
-        .allResources().inCompartment("Organization", authorizedOrganizationList).andThen().allow("Read Endpoint")
-        .read().allResources().inCompartment("Endpoint", organizationEndpointList).andThen().allow("Write Endpoint")
-        .write().allResources().inCompartment("Endpoint", organizationEndpointList).andThen();
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder()
+          .allow("Read Organization").read().allResources().inCompartment("Organization", authorizedOrganizationList).andThen()
+          .allow("Write Organization").write().allResources().inCompartment("Organization", authorizedOrganizationList).andThen()
+          .allow("Read Endpoint").read().allResources().inCompartment("Endpoint", organizationEndpointList).andThen()
+          .allow("Write Endpoint").write().allResources().inCompartment("Endpoint", organizationEndpointList).andThen();
     if (authorizedPatientList.size() != 0) {
       ruleBuilder.allow("Read ServiceRequest").read().allResources()
           .inCompartment("ServiceRequest", authorizedServiceRequestList).andThen().allow("Write ServiceRequest").write()
