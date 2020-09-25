@@ -74,12 +74,14 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     ourLog.info(authHeader);
 
     final BearerToken bearerToken = new BearerToken(authHeader);
-    final List<IdType> myOrgIds = bearerToken.getAuthorizedOrganizations();
 
     // Grant administrators access to everything
     if (bearerToken.isAdmin()) {
       return new RuleBuilder().allowAll().build();
     }
+
+    // get list of authorized organizations
+    final List<IdType> myOrgIds = bearerToken.getAuthorizedOrganizations();
 
     // get all organizations
     Set<IIdType> authorizedOrganizationList = new HashSet<>();
