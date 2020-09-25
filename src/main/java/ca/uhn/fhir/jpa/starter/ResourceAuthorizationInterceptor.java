@@ -33,6 +33,7 @@ import org.apache.commons.lang3.Validate;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.instance.model.api.IIdType;
 import org.hl7.fhir.r4.model.IdType;
+import org.hl7.fhir.r4.model.Communication;
 import org.hl7.fhir.r4.model.CommunicationRequest;
 import org.hl7.fhir.r4.model.DiagnosticReport;
 import org.hl7.fhir.r4.model.Organization;
@@ -153,6 +154,35 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       }
     }
 
+    Set<IIdType> authorizedCommunicationList = new HashSet<>();
+
+    // search all Communications for the organization
+    IFhirResourceDao<?> communicationDao = myDaoRegistry.getResourceDao("Communication");
+    resources = communicationDao.search(new SearchParameterMap());
+    ourLog.info(resources.size().toString() + " Communications found");
+    final List<IBaseResource> communications = resources.getResources(0, resources.size());
+
+    // extract patient ID if organization is connected with Communication
+    for (IBaseResource comms : communications) {
+      Communication com = (Communication) comms;
+      Reference sender = com.getSender();
+      List<Reference> recipients = com.getRecipient();
+
+      for (IIdType authorizedOrganization : authorizedOrganizationList) {
+        if (sender != null && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())) {
+          authorizedCommunicationList.add(new IdType("Communication/" + com.getIdElement().getIdPart()));
+          ourLog.info("Added " + "Communication/" + com.getIdElement().getIdPart());
+        } else { // no need to look into recipients if sender already matched
+          for (Reference recipient : recipients) {
+            if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
+              authorizedCommunicationList.add(new IdType("Communication/" + com.getIdElement().getIdPart()));
+              ourLog.info("Added " + "Communication/" + com.getIdElement().getIdPart());
+            }
+          }
+        }
+      }
+    }
+
     Set<IIdType> authorizedCommunicationRequestList = new HashSet<>();
 
     // search all CommunicationRequests for the organization
@@ -214,6 +244,8 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     // Allow the user to read/write anything in their own endpoint compartment
     // Allow the user to read/write anything in their connected servicerequest
     // compartment
+    // Allow the user to read/write anything in their connected communication
+    // compartment
     // Allow the user to read/write anything in their connected communicationrequest
     // compartment
     // Allow the user to read/write anything in their connected diagnosticreport
@@ -227,16 +259,14 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
           .allow("Read Endpoint").read().allResources().inCompartment("Endpoint", organizationEndpointList).andThen()
           .allow("Write Endpoint").write().allResources().inCompartment("Endpoint", organizationEndpointList).andThen();
     if (authorizedPatientList.size() != 0) {
-      ruleBuilder.allow("Read ServiceRequest").read().allResources()
-          .inCompartment("ServiceRequest", authorizedServiceRequestList).andThen().allow("Write ServiceRequest").write()
-          .allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
-          .allow("Read CommunicationRequest").read().allResources()
-          .inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
-          .allow("Write CommunicationRequest").write().allResources()
-          .inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
-          .allow("Read DiagnosticReport").read().allResources()
-          .inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen().allow("Write DiagnosticReport")
-          .write().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
+      ruleBuilder.allow("Read ServiceRequest").read().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
+          .allow("Write ServiceRequest").write().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
+          .allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+          .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+          .allow("Read CommunicationRequest").read().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
+          .allow("Write CommunicationRequest").write().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
+          .allow("Read DiagnosticReport").read().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
+          .allow("Write DiagnosticReport").write().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
           .allow("Read Patient").read().allResources().inCompartment("Patient", authorizedPatientList).andThen()
           .allow("Write Patient").write().allResources().inCompartment("Patient", authorizedPatientList).andThen();
     }

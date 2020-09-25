@@ -35,6 +35,7 @@ import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Organization;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
+import org.hl7.fhir.r4.model.Communication;
 
 import ca.uhn.fhir.jpa.api.dao.DaoRegistry;
 import ca.uhn.fhir.jpa.api.dao.IFhirResourceDao;
@@ -105,6 +106,9 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
       case "Organization":
         // allow reading all Organizations
         return new AuthorizedList();
+      case "Communication":
+        authorizedResourceList = getCommunicationResources(authorizedOrganizationList);
+        break;
     }
 
     if (authorizedResourceList.isEmpty()) {
@@ -183,6 +187,40 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
 
    // Allow all ServiceRequests which are related to any authorized organization
    return authorizedServiceRequestList;
+  }
+
+  private Set<String> getCommunicationResources(Set<IIdType> authorizedOrganizationList) {
+   Set<String> authorizedCommunicationList = new HashSet<>();
+
+   // search all Communications for the organization
+   IFhirResourceDao<?> communicationDao = myDaoRegistry.getResourceDao("Communication");
+   IBundleProvider resources = communicationDao.search(new SearchParameterMap());
+   ourLog.info(resources.size().toString() + " Communications found");
+   final List<IBaseResource> communications = resources.getResources(0, resources.size());
+
+   // extract patient ID if organization is connected with Communication
+   for (IBaseResource comms : communications) {
+     Communication com = (Communication) comms;
+     Reference sender = com.getSender();
+     List<Reference> recipients = com.getRecipient();
+
+     for (IIdType authorizedOrganization : authorizedOrganizationList) {
+       if (sender != null && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())) {
+         authorizedCommunicationList.add("Communication/" + com.getIdElement().getIdPart());
+         ourLog.info("Added " + "Communication/" + com.getIdElement().getIdPart());
+       } else { // no need to look into recipients if sender already matched
+         for (Reference recipient : recipients) {
+           if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
+             authorizedCommunicationList.add("Communication/" + com.getIdElement().getIdPart());
+             ourLog.info("Added " + "Communication/" + com.getIdElement().getIdPart());
+           }
+         }
+       }
+     }
+   }
+
+   // Allow all Communication which are related to any authorized organization
+   return authorizedCommunicationList;
   }
 
 }
