@@ -41,8 +41,8 @@ public class JpaRestfulServer extends BaseJpaRestfulServer {
     /*
      * Add search narrowing interceptor
      */
-    PatientSearchNarrowingInterceptor patientSearchInterceptor = new PatientSearchNarrowingInterceptor(daoRegistry);
-    registerInterceptor(patientSearchInterceptor);
+    ResourceSearchNarrowingInterceptor resourceSearchInterceptor = new ResourceSearchNarrowingInterceptor(daoRegistry);
+    registerInterceptor(resourceSearchInterceptor);
   }
 
 }

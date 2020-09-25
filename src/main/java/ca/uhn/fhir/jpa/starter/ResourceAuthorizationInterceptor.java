@@ -109,7 +109,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       ourLog.info(authorizedOrganizationList.toString());
       ourLog.info(organizationEndpointList.toString());
       return new RuleBuilder()
-         .allow("Read Organization").read().allResources().inCompartment("Organization", authorizedOrganizationList).andThen()
+         .allow("Read all Organizations").read().resourcesOfType​("Organization").withAnyId().andThen()
          .allow("Write Organization").write().allResources().inCompartment("Organization", authorizedOrganizationList).andThen()
          .allow("Read Endpoint").read().allResources().inCompartment("Endpoint", organizationEndpointList).andThen()
          .allow("Write Endpoint").write().allResources().inCompartment("Endpoint", organizationEndpointList).andThen()
@@ -134,15 +134,15 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
       for (IIdType authorizedOrganization : authorizedOrganizationList) {
         if (requester != null && authorizedOrganization.getValue().equals(requester.getReferenceElement().getValue())) {
-          authorizedServiceRequestList.add(srRes.getIdElement());
-          ourLog.info("Added " + srRes.getIdElement());
+          authorizedServiceRequestList.add(new IdType("ServiceRequest/" + srRes.getIdElement().getIdPart()));
+          ourLog.info("Added " + "ServiceRequest/" + srRes.getIdElement().getIdPart());
           authorizedPatientList.add(sr.getSubject().getReferenceElement());
           ourLog.info("Added " + sr.getSubject().getReferenceElement());
         } else { // no need to look into performers if requester already matched
           for (Reference performer : performers) {
             if (performer != null && authorizedOrganization.getValue().equals(performer.getReferenceElement().getValue())) {
-              authorizedServiceRequestList.add(srRes.getIdElement());
-              ourLog.info("Added " + srRes.getIdElement());
+              authorizedServiceRequestList.add(new IdType("ServiceRequest/" + srRes.getIdElement().getIdPart()));
+              ourLog.info("Added " + "ServiceRequest/" + srRes.getIdElement().getIdPart());
               authorizedPatientList.add(sr.getSubject().getReferenceElement());
               ourLog.info("Added " + sr.getSubject().getReferenceElement());
             }
@@ -207,7 +207,8 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
     // If the user is a from a specific organization, we create the following rule
     // chain:
-    // Allow the user to read/write anything in their own organization compartment
+    // Allow the user to read every organization resource
+    // Allow the user to write anything in their own organization compartment
     // Allow the user to read/write anything in their own endpoint compartment
     // Allow the user to read/write anything in their connected servicerequest
     // compartment
@@ -219,7 +220,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     // If a client request doesn't pass either of the above, deny it
 
     IAuthRuleBuilder ruleBuilder = new RuleBuilder()
-          .allow("Read Organization").read().allResources().inCompartment("Organization", authorizedOrganizationList).andThen()
+          .allow("Read all Organizations").read().resourcesOfType​("Organization").withAnyId().andThen()
           .allow("Write Organization").write().allResources().inCompartment("Organization", authorizedOrganizationList).andThen()
           .allow("Read Endpoint").read().allResources().inCompartment("Endpoint", organizationEndpointList).andThen()
           .allow("Write Endpoint").write().allResources().inCompartment("Endpoint", organizationEndpointList).andThen();
