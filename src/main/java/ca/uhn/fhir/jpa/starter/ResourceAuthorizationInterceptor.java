@@ -44,6 +44,7 @@ import ca.uhn.fhir.jpa.api.dao.DaoRegistry;
 import ca.uhn.fhir.jpa.api.dao.IFhirResourceDao;
 import ca.uhn.fhir.jpa.searchparam.SearchParameterMap;
 import ca.uhn.fhir.model.primitive.IdDt;
+import ca.uhn.fhir.rest.api.RestOperationTypeEnum;
 import ca.uhn.fhir.rest.api.server.IBundleProvider;
 import ca.uhn.fhir.rest.api.server.RequestDetails;
 import ca.uhn.fhir.rest.server.exceptions.AuthenticationException;
@@ -106,6 +107,20 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     if (authorizedOrganizationList.isEmpty()) {
       // Throw an HTTP 401
       throw new AuthenticationException("No valid access role: Organization not found");
+    }
+
+    // allow creation of new resources
+    if (theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.CREATE)) {
+      return new RuleBuilder()
+        .allow("Create Patient").create().resourcesOfType​("Patient").withAnyId().andThen()
+        .allow("Create Communication").create().resourcesOfType​("Communication").withAnyId().andThen()
+        .allow("Create ServiceRequest").create().resourcesOfType​("ServiceRequest").withAnyId().andThen()
+        .allow("Create CommunicationRequest").create().resourcesOfType​("CommunicationRequest").withAnyId().andThen()
+        .allow("Create DiagnosticReport").create().resourcesOfType​("DiagnosticReport").withAnyId().andThen()
+        .allow("Create Observation").create().resourcesOfType​("Observation").withAnyId().andThen()
+        .allow("Create Media").create().resourcesOfType​("Media").withAnyId().andThen()
+        .allow("Create Coverage").create().resourcesOfType​("Coverage").withAnyId().andThen()
+        .build();
     }
 
     if (theRequestDetails.getResourceName().equals("Organization") || theRequestDetails.getResourceName().equals("Endpoint")) {
