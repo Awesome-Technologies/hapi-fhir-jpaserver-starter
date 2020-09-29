@@ -37,6 +37,7 @@ import org.hl7.fhir.r4.model.Communication;
 import org.hl7.fhir.r4.model.CommunicationRequest;
 import org.hl7.fhir.r4.model.DiagnosticReport;
 import org.hl7.fhir.r4.model.Organization;
+import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
 
@@ -138,9 +139,28 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     Set<IIdType> authorizedPatientList = new HashSet<>();
     Set<IIdType> authorizedServiceRequestList = new HashSet<>();
 
+    // search all patients managed by the organization
+    IFhirResourceDao<?> patientsDao = myDaoRegistry.getResourceDao("Patient");
+    IBundleProvider resources = patientsDao.search(new SearchParameterMap());
+    ourLog.info(resources.size().toString() + " Patients found");
+    final List<IBaseResource> patients = resources.getResources(0, resources.size());
+
+    // extract patient ID if organization is managingOrganization of Patient
+    for (IBaseResource patRes : patients) {
+      Patient pat = (Patient) patRes;
+      Reference managingOrganization = pat.getManagingOrganization();
+
+      for (IIdType authorizedOrganization : authorizedOrganizationList) {
+        if (managingOrganization != null && authorizedOrganization.getValue().equals(managingOrganization.getReferenceElement().getValue())) {
+          authorizedPatientList.add(new IdType("Patient/" + patRes.getIdElement().getIdPart()));
+          ourLog.info("Added " + "Patient/" + patRes.getIdElement().getIdPart());
+        }
+      }
+    }
+
     // search all ServiceRequests for the organization
     IFhirResourceDao<?> serviceRequestdao = myDaoRegistry.getResourceDao("ServiceRequest");
-    IBundleProvider resources = serviceRequestdao.search(new SearchParameterMap());
+    resources = serviceRequestdao.search(new SearchParameterMap());
     ourLog.info(resources.size().toString() + " ServiceRequests found");
     final List<IBaseResource> serviceRequests = resources.getResources(0, resources.size());
 
