@@ -187,11 +187,15 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         if (sender != null && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())) {
           authorizedCommunicationList.add(new IdType("Communication/" + com.getIdElement().getIdPart()));
           ourLog.info("Added " + "Communication/" + com.getIdElement().getIdPart());
+          authorizedPatientList.add(com.getSubject().getReferenceElement());
+          ourLog.info("Added " + com.getSubject().getReferenceElement());
         } else { // no need to look into recipients if sender already matched
           for (Reference recipient : recipients) {
             if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
               authorizedCommunicationList.add(new IdType("Communication/" + com.getIdElement().getIdPart()));
               ourLog.info("Added " + "Communication/" + com.getIdElement().getIdPart());
+              authorizedPatientList.add(com.getSubject().getReferenceElement());
+              ourLog.info("Added " + com.getSubject().getReferenceElement());
             }
           }
         }
