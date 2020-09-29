@@ -36,6 +36,7 @@ import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Communication;
 import org.hl7.fhir.r4.model.CommunicationRequest;
 import org.hl7.fhir.r4.model.DiagnosticReport;
+import org.hl7.fhir.r4.model.Media;
 import org.hl7.fhir.r4.model.Organization;
 import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Reference;
@@ -265,11 +266,35 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       DiagnosticReport dr = (DiagnosticReport) diagRes;
       List<Reference> basedOn = dr.getBasedOn();
 
-      for (IIdType authorizedOrganization : authorizedOrganizationList) {
+      for (IIdType authorizedSR : authorizedServiceRequestList) {
         for (Reference basedOnRef : basedOn) {
-          if (basedOnRef != null && authorizedOrganization.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
-            authorizedDiagnosticReportList.add(diagRes.getIdElement());
-            ourLog.info("Added " + diagRes.getIdElement());
+          if (basedOnRef != null && authorizedSR.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
+            authorizedDiagnosticReportList.add(new IdType("DiagnosticReport/" + diagRes.getIdElement().getIdPart()));
+            ourLog.info("Added " + "DiagnosticReport/" + diagRes.getIdElement().getIdPart());
+            continue; // TODO also exit outer loop
+          }
+        }
+      }
+    }
+
+    // search all Media authorized for the organization
+    Set<IIdType> authorizedMediaList = new HashSet<>();
+
+    IFhirResourceDao<?> mediaRequestdao = myDaoRegistry.getResourceDao("Media");
+    resources = mediaRequestdao.search(new SearchParameterMap());
+    ourLog.info(resources.size().toString() + " Media found");
+    final List<IBaseResource> medias = resources.getResources(0, resources.size());
+
+    // add MediaID if allowed ServiceRequest is connected with Media
+    for (IBaseResource mediaRes : medias) {
+      Media media = (Media) mediaRes;
+      List<Reference> basedOn = media.getBasedOn();
+
+      for (IIdType authorizedSR : authorizedServiceRequestList) {
+        for (Reference basedOnRef : basedOn) {
+          if (basedOnRef != null && authorizedSR.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
+            authorizedMediaList.add(new IdType("Media/" + mediaRes.getIdElement().getIdPart()));
+            ourLog.info("Added " + "Media/" + mediaRes.getIdElement().getIdPart());
             continue; // TODO also exit outer loop
           }
         }
@@ -287,8 +312,8 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     // compartment
     // Allow the user to read/write anything in their connected communicationrequest
     // compartment
-    // Allow the user to read/write anything in their connected diagnosticreport
-    // compartment
+    // Allow the user to read/write anything in their connected diagnosticreports
+    // Allow the user to read/write anything in their connected medias
     // Allow the user to read/write anything in their connected patient compartment
     // If a client request doesn't pass either of the above, deny it
 
@@ -304,8 +329,10 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
           .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
           .allow("Read CommunicationRequest").read().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
           .allow("Write CommunicationRequest").write().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
-          .allow("Read DiagnosticReport").read().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
-          .allow("Write DiagnosticReport").write().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
+          .allow("Read DiagnosticReport").read().instances(authorizedDiagnosticReportList).andThen()
+          .allow("Write DiagnosticReport").write().instances(authorizedDiagnosticReportList).andThen()
+          .allow("Read Media").read().instances(authorizedMediaList).andThen()
+          .allow("Write Media").write().instances(authorizedMediaList).andThen()
           .allow("Read Patient").read().allResources().inCompartment("Patient", authorizedPatientList).andThen()
           .allow("Write Patient").write().allResources().inCompartment("Patient", authorizedPatientList).andThen();
     }

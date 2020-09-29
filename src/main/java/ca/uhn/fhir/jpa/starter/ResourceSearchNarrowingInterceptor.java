@@ -36,6 +36,8 @@ import org.hl7.fhir.r4.model.Organization;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
 import org.hl7.fhir.r4.model.Communication;
+import org.hl7.fhir.r4.model.DiagnosticReport;
+import org.hl7.fhir.r4.model.Media;
 
 import ca.uhn.fhir.jpa.api.dao.DaoRegistry;
 import ca.uhn.fhir.jpa.api.dao.IFhirResourceDao;
@@ -115,6 +117,16 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
       case "Communication":
         authorizedResourceList = getCommunicationResources(authorizedOrganizationList);
         break;
+      case "DiagnosticReport":
+        authorizedResourceList = getDiagnosticReportResources(authorizedOrganizationList);
+        break;
+      case "Media":
+        authorizedResourceList = getMediaResources(authorizedOrganizationList);
+        break;
+      default:
+        // do not restrict search, let ResourceAuthorizationInterceptor restrict access
+        ourLog.info("allow all search");
+        return new AuthorizedList();
     }
 
     if (authorizedResourceList.isEmpty()) {
@@ -122,7 +134,6 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
     }
 
     return new AuthorizedList().addCompartments(authorizedResourceList.toArray(new String[0]));
-
   }
 
   private Set<String> getPatientResources(Set<IIdType> authorizedOrganizationList) {
@@ -229,4 +240,68 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
    return authorizedCommunicationList;
   }
 
+
+  private Set<String> getDiagnosticReportResources(Set<IIdType> authorizedOrganizationList) {
+    Set<String> authorizedServiceRequestList = getServiceRequestResources(authorizedOrganizationList);
+
+    // search all DiagnosticReports for the organization
+    Set<String> authorizedDiagnosticReportList = new HashSet<>();
+
+    IFhirResourceDao<?> diagnosticReportRequestdao = myDaoRegistry.getResourceDao("DiagnosticReport");
+    IBundleProvider resources = diagnosticReportRequestdao.search(new SearchParameterMap());
+    ourLog.info(resources.size().toString() + " DiagnosticReports found");
+    final List<IBaseResource> diagnosticReports = resources.getResources(0, resources.size());
+
+    // add DiagnosticReportID if allowed ServiceRequest is connected with
+    // DiagnosticReport
+    for (IBaseResource diagRes : diagnosticReports) {
+      DiagnosticReport dr = (DiagnosticReport) diagRes;
+      List<Reference> basedOn = dr.getBasedOn();
+
+      for (String authorizedSR : authorizedServiceRequestList) {
+        for (Reference basedOnRef : basedOn) {
+          if (basedOnRef != null && authorizedSR.equals(basedOnRef.getReferenceElement().getValue())) {
+            authorizedDiagnosticReportList.add("DiagnosticReport/" + diagRes.getIdElement().getIdPart());
+            ourLog.info("Added " + "DiagnosticReport/" + diagRes.getIdElement().getIdPart());
+            continue; // TODO also exit outer loop
+          }
+        }
+      }
+    }
+
+    // Allow all DiagnosticReports which are related to any authorized organization
+    return authorizedDiagnosticReportList;
+  }
+
+
+  private Set<String> getMediaResources(Set<IIdType> authorizedOrganizationList) {
+    Set<String> authorizedServiceRequestList = getServiceRequestResources(authorizedOrganizationList);
+
+    // search all Media authorized for the organization
+    Set<String> authorizedMediaList = new HashSet<>();
+
+    IFhirResourceDao<?> mediaRequestdao = myDaoRegistry.getResourceDao("Media");
+    IBundleProvider resources = mediaRequestdao.search(new SearchParameterMap());
+    ourLog.info(resources.size().toString() + " Media found");
+    final List<IBaseResource> medias = resources.getResources(0, resources.size());
+
+    // add MediaID if allowed ServiceRequest is connected with Media
+    for (IBaseResource mediaRes : medias) {
+      Media media = (Media) mediaRes;
+      List<Reference> basedOn = media.getBasedOn();
+
+      for (String authorizedSR : authorizedServiceRequestList) {
+        for (Reference basedOnRef : basedOn) {
+          if (basedOnRef != null && authorizedSR.equals(basedOnRef.getReferenceElement().getValue())) {
+            authorizedMediaList.add("Media/" + mediaRes.getIdElement().getIdPart());
+            ourLog.info("Added " + "Media/" + mediaRes.getIdElement().getIdPart());
+            continue; // TODO also exit outer loop
+          }
+        }
+      }
+    }
+
+    // Allow all Media which are related to any authorized organization
+    return authorizedMediaList;
+  }
 }
