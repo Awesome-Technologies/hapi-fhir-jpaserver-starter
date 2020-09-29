@@ -73,6 +73,12 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
     ourLog.info(authHeader);
 
     final BearerToken bearerToken = new BearerToken(authHeader);
+
+    // Grant administrators access to everything
+    if (bearerToken.isAdmin()) {
+      return new AuthorizedList();
+    }
+
     final List<IdType> myOrgIds = bearerToken.getAuthorizedOrganizations();
 
     // get all organizations
