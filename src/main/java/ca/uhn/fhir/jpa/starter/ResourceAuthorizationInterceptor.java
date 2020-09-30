@@ -329,10 +329,10 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
           .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
           .allow("Read CommunicationRequest").read().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
           .allow("Write CommunicationRequest").write().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
-          .allow("Read DiagnosticReport").read().instances(authorizedDiagnosticReportList).andThen()
-          .allow("Write DiagnosticReport").write().instances(authorizedDiagnosticReportList).andThen()
-          .allow("Read Media").read().instances(authorizedMediaList).andThen()
-          .allow("Write Media").write().instances(authorizedMediaList).andThen()
+          .allow("Read DiagnosticReport").read().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
+          .allow("Write DiagnosticReport").write().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
+          .allow("Read Media").read().allResources().inCompartment("Media", authorizedMediaList).andThen()
+          .allow("Write Media").write().allResources().inCompartment("Media", authorizedMediaList).andThen()
           .allow("Read Patient").read().allResources().inCompartment("Patient", authorizedPatientList).andThen()
           .allow("Write Patient").write().allResources().inCompartment("Patient", authorizedPatientList).andThen();
     }
