@@ -48,7 +48,6 @@ public class BearerToken {
     if (authHeader.toUpperCase().startsWith(BEARER) == false)
       throw new AuthenticationException("Invalid Authorization header. Missing Bearer prefix");
     jwt = JWT.decode(authHeader.substring(BEARER.length()));
-    ourLog.info("JWT: header " + getHeaderJSON() + "; payload " + getPayloadJSON());
   }
 
   public String getHeaderJSON() {
@@ -90,6 +89,7 @@ public class BearerToken {
       e.printStackTrace();
       throw new AuthenticationException("Invalid authorization header value");
     }
+    ourLog.info("Organizations " + myOrgIds.toString());
     return myOrgIds;
   }
 }

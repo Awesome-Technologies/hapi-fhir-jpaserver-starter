@@ -97,11 +97,9 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       IBaseResource orgRes = organizationDao.read(myOrg);
       if (!orgRes.isEmpty()) {
         authorizedOrganizationList.add(myOrg);
-        ourLog.info("Added " + myOrg.getValue());
         List<Reference> endpoints = ((Organization) orgRes).getEndpoint();
         for (Reference endpoint : endpoints) {
           organizationEndpointList.add(endpoint.getReferenceElement());
-          ourLog.info("Added " + endpoint.getReferenceElement());
         }
       }
     }
@@ -110,6 +108,8 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       // Throw an HTTP 401
       throw new AuthenticationException("No valid access role: Organization not found");
     }
+
+    ourLog.info("Added " + authorizedOrganizationList.toString() + " " + organizationEndpointList.toString());
 
     // allow creation of new resources
     if (theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.CREATE)) {
@@ -154,7 +154,6 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       for (IIdType authorizedOrganization : authorizedOrganizationList) {
         if (managingOrganization != null && authorizedOrganization.getValue().equals(managingOrganization.getReferenceElement().getValue())) {
           authorizedPatientList.add(new IdType("Patient/" + patRes.getIdElement().getIdPart()));
-          ourLog.info("Added " + "Patient/" + patRes.getIdElement().getIdPart());
         }
       }
     }
@@ -174,16 +173,12 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       for (IIdType authorizedOrganization : authorizedOrganizationList) {
         if (requester != null && authorizedOrganization.getValue().equals(requester.getReferenceElement().getValue())) {
           authorizedServiceRequestList.add(new IdType("ServiceRequest/" + srRes.getIdElement().getIdPart()));
-          ourLog.info("Added " + "ServiceRequest/" + srRes.getIdElement().getIdPart());
           authorizedPatientList.add(sr.getSubject().getReferenceElement());
-          ourLog.info("Added " + sr.getSubject().getReferenceElement());
         } else { // no need to look into performers if requester already matched
           for (Reference performer : performers) {
             if (performer != null && authorizedOrganization.getValue().equals(performer.getReferenceElement().getValue())) {
               authorizedServiceRequestList.add(new IdType("ServiceRequest/" + srRes.getIdElement().getIdPart()));
-              ourLog.info("Added " + "ServiceRequest/" + srRes.getIdElement().getIdPart());
               authorizedPatientList.add(sr.getSubject().getReferenceElement());
-              ourLog.info("Added " + sr.getSubject().getReferenceElement());
             }
           }
         }
@@ -207,16 +202,12 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       for (IIdType authorizedOrganization : authorizedOrganizationList) {
         if (sender != null && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())) {
           authorizedCommunicationList.add(new IdType("Communication/" + com.getIdElement().getIdPart()));
-          ourLog.info("Added " + "Communication/" + com.getIdElement().getIdPart());
           authorizedPatientList.add(com.getSubject().getReferenceElement());
-          ourLog.info("Added " + com.getSubject().getReferenceElement());
         } else { // no need to look into recipients if sender already matched
           for (Reference recipient : recipients) {
             if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
               authorizedCommunicationList.add(new IdType("Communication/" + com.getIdElement().getIdPart()));
-              ourLog.info("Added " + "Communication/" + com.getIdElement().getIdPart());
               authorizedPatientList.add(com.getSubject().getReferenceElement());
-              ourLog.info("Added " + com.getSubject().getReferenceElement());
             }
           }
         }
@@ -240,12 +231,10 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       for (IIdType authorizedOrganization : authorizedOrganizationList) {
         if (sender != null && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())) {
           authorizedCommunicationRequestList.add(commRes.getIdElement());
-          ourLog.info("Added " + commRes.getIdElement());
         } else { // no need to look into recipients if sender already matched
           for (Reference recipient : recipients) {
             if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
               authorizedCommunicationRequestList.add(commRes.getIdElement());
-              ourLog.info("Added " + commRes.getIdElement());
             }
           }
         }
@@ -270,7 +259,6 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         for (Reference basedOnRef : basedOn) {
           if (basedOnRef != null && authorizedSR.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
             authorizedDiagnosticReportList.add(new IdType("DiagnosticReport/" + diagRes.getIdElement().getIdPart()));
-            ourLog.info("Added " + "DiagnosticReport/" + diagRes.getIdElement().getIdPart());
             continue; // TODO also exit outer loop
           }
         }
@@ -294,12 +282,18 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         for (Reference basedOnRef : basedOn) {
           if (basedOnRef != null && authorizedSR.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
             authorizedMediaList.add(new IdType("Media/" + mediaRes.getIdElement().getIdPart()));
-            ourLog.info("Added " + "Media/" + mediaRes.getIdElement().getIdPart());
             continue; // TODO also exit outer loop
           }
         }
       }
     }
+
+    ourLog.info(authorizedPatientList.toString());
+    ourLog.info(authorizedServiceRequestList.toString());
+    ourLog.info(authorizedCommunicationList.toString());
+    ourLog.info(authorizedCommunicationRequestList.toString());
+    ourLog.info(authorizedDiagnosticReportList.toString());
+    ourLog.info(authorizedMediaList.toString());
 
     // If the user is a from a specific organization, we create the following rule
     // chain:

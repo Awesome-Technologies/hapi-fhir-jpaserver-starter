@@ -93,7 +93,6 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
       IBaseResource orgRes = organizationDao.read(myOrg);
       if (!orgRes.isEmpty()) {
         authorizedOrganizationList.add(myOrg);
-        ourLog.info("Added " + myOrg.getValue());
       }
     }
 
@@ -125,7 +124,6 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
         break;
       default:
         // do not restrict search, let ResourceAuthorizationInterceptor restrict access
-        ourLog.info("allow all search");
         return new AuthorizedList();
     }
 
@@ -133,6 +131,7 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
       throw new AuthenticationException("No authorization for accessing resources");
     }
 
+    ourLog.info("Added " + authorizedResourceList.toString());
     return new AuthorizedList().addCompartments(authorizedResourceList.toArray(new String[0]));
   }
 
@@ -154,12 +153,10 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
      for (IIdType authorizedOrganization : authorizedOrganizationList) {
        if (requester != null && authorizedOrganization.getValue().equals(requester.getReferenceElement().getValue())) {
          authorizedPatientList.add(sr.getSubject().getReferenceElement().getValue());
-         ourLog.info("Added " + sr.getSubject().getReferenceElement());
        } else { // no need to look into performers if requester already matched
          for (Reference performer : performers) {
            if (performer != null && authorizedOrganization.getValue().equals(performer.getReferenceElement().getValue())) {
              authorizedPatientList.add(sr.getSubject().getReferenceElement().getValue());
-             ourLog.info("Added " + sr.getSubject().getReferenceElement());
            }
          }
        }
@@ -190,12 +187,10 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
      for (IIdType authorizedOrganization : authorizedOrganizationList) {
        if (requester != null && authorizedOrganization.getValue().equals(requester.getReferenceElement().getValue())) {
          authorizedServiceRequestList.add("ServiceRequest/" + sr.getIdElement().getIdPart());
-         ourLog.info("Added " + "ServiceRequest/" + sr.getIdElement().getIdPart());
        } else { // no need to look into performers if requester already matched
          for (Reference performer : performers) {
            if (performer != null && authorizedOrganization.getValue().equals(performer.getReferenceElement().getValue())) {
              authorizedServiceRequestList.add("ServiceRequest/" + sr.getIdElement().getIdPart());
-             ourLog.info("Added " + "ServiceRequest/" + sr.getIdElement().getIdPart());
            }
          }
        }
@@ -224,12 +219,10 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
      for (IIdType authorizedOrganization : authorizedOrganizationList) {
        if (sender != null && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())) {
          authorizedCommunicationList.add("Communication/" + com.getIdElement().getIdPart());
-         ourLog.info("Added " + "Communication/" + com.getIdElement().getIdPart());
        } else { // no need to look into recipients if sender already matched
          for (Reference recipient : recipients) {
            if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
              authorizedCommunicationList.add("Communication/" + com.getIdElement().getIdPart());
-             ourLog.info("Added " + "Communication/" + com.getIdElement().getIdPart());
            }
          }
        }
@@ -262,7 +255,6 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
         for (Reference basedOnRef : basedOn) {
           if (basedOnRef != null && authorizedSR.equals(basedOnRef.getReferenceElement().getValue())) {
             authorizedDiagnosticReportList.add("DiagnosticReport/" + diagRes.getIdElement().getIdPart());
-            ourLog.info("Added " + "DiagnosticReport/" + diagRes.getIdElement().getIdPart());
             continue; // TODO also exit outer loop
           }
         }
@@ -294,7 +286,6 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
         for (Reference basedOnRef : basedOn) {
           if (basedOnRef != null && authorizedSR.equals(basedOnRef.getReferenceElement().getValue())) {
             authorizedMediaList.add("Media/" + mediaRes.getIdElement().getIdPart());
-            ourLog.info("Added " + "Media/" + mediaRes.getIdElement().getIdPart());
             continue; // TODO also exit outer loop
           }
         }
