@@ -12,6 +12,8 @@ import java.util.List;
 
 import org.apache.commons.lang3.Validate;
 import org.hl7.fhir.instance.model.api.IBaseResource;
+import org.hl7.fhir.r4.model.Communication;
+import org.hl7.fhir.r4.model.Communication.CommunicationStatus;
 import org.hl7.fhir.r4.model.CommunicationRequest;
 import org.hl7.fhir.r4.model.CommunicationRequest.CommunicationRequestStatus;
 import org.hl7.fhir.r4.model.ContactPoint;
@@ -96,10 +98,15 @@ public class PushInterceptor {
     if (myResourceName == null) return;
 
     if (myResourceName.startsWith("ServiceRequest")) handleServiceRequests(theRequestDetails, myOperationType);
+    else if (myResourceName.startsWith("Communication")) handleCommunication(theRequestDetails, myOperationType);
     else if (myResourceName.startsWith("CommunicationRequest")) handleCommunicationRequests(theRequestDetails, myOperationType);
   }
 
   private void handleServiceRequests(ServletRequestDetails theRequestDetails, String theOperationType) {
+    // only push when ServiceRequest is created
+    String myOperationType = theRequestDetails.getRestOperationType().getCode();
+    if (!myOperationType.equals("create")) return;
+
     final IBaseResource serviceRequest = theRequestDetails.getResource();
     if (serviceRequest == null || !(serviceRequest instanceof ServiceRequest)) {
       ourLog.warn("ServiceRequest is not readable");
@@ -159,6 +166,69 @@ public class PushInterceptor {
 
     // send push notification to endpoints
     sendPushNotification(pushTokens, theOperationType, senderId, patientId, serviceRequestId, PUSH_APP_ID_NORMAL);
+  }
+
+  private void handleCommunication(ServletRequestDetails theRequestDetails, String myOperationType) {
+    final IBaseResource communication = theRequestDetails.getResource();
+    if (communication == null || !(communication instanceof Communication)) {
+      ourLog.warn("Communication is not readable");
+      return;
+    }
+    final Communication myCommunication = (Communication) communication;
+
+    // check if status is in progress
+    final CommunicationStatus status = myCommunication.getStatus();
+    if (!status.getDisplay().toLowerCase().equals("in progress")) {
+      ourLog.info("Communication status is not in progress but " + status.getDisplay().toLowerCase());
+      return;
+    }
+
+    // read Communication id
+    final String communicationId = myCommunication.getId();
+    final String requestType = getReferenceType(communicationId);
+    if (!requestType.equals("Communication")) {
+      ourLog.warn("Reference is not a Communication but: " + requestType);
+      return;
+    }
+
+    // read patient id
+    final Reference patient = myCommunication.getSubject();
+    if (patient == null) {
+      ourLog.warn("No subject");
+      return;
+    }
+    final String patientId = patient.getReference();
+    final String patientType = getReferenceType(patientId);
+    if (!patientType.equals("Patient")) {
+      ourLog.warn("Subject is not a Patient but: " + patientType);
+      return;
+    }
+
+    // find sender organization
+    final Reference sender = myCommunication.getSender();
+    if (sender == null) {
+        ourLog.warn("No sender");
+        return;
+    }
+    final String senderId = sender.getReference();
+    final String senderType = getReferenceType(senderId);
+    if (!senderType.equals("Organization")) {
+      ourLog.warn("Requester is not an Organization but: " + senderType);
+      return;
+    }
+
+    // find recipient organization
+    final Reference recipient = myCommunication.getRecipientFirstRep();
+    if (recipient == null) {
+      ourLog.warn("No recipient set");
+      return;
+    }
+
+    String app_id = PUSH_APP_ID_NORMAL;
+    final List<String> pushTokens = getPushTokens(recipient, "push_token");
+
+    // send a push notification via Sygnal to APNS
+    sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationId, PUSH_APP_ID_NORMAL);
   }
 
   private void handleCommunicationRequests(ServletRequestDetails theRequestDetails, String myOperationType) {
