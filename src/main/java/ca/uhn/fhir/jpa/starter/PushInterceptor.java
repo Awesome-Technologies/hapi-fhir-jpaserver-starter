@@ -304,6 +304,7 @@ public class PushInterceptor {
   }
 
   private String getReferenceType(String reference) {
+    if (reference == null) return "";
     return reference.split("/")[0];
   }
 
