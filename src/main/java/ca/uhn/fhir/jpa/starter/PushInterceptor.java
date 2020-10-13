@@ -8,10 +8,12 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.apache.commons.lang3.Validate;
 import org.hl7.fhir.instance.model.api.IBaseResource;
+import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Communication;
 import org.hl7.fhir.r4.model.Communication.CommunicationStatus;
 import org.hl7.fhir.r4.model.CommunicationRequest;
@@ -98,8 +100,8 @@ public class PushInterceptor {
     if (myResourceName == null) return;
 
     if (myResourceName.startsWith("ServiceRequest")) handleServiceRequests(theRequestDetails, myOperationType);
-    else if (myResourceName.startsWith("Communication")) handleCommunication(theRequestDetails, myOperationType);
     else if (myResourceName.startsWith("CommunicationRequest")) handleCommunicationRequests(theRequestDetails, myOperationType);
+    else if (myResourceName.startsWith("Communication")) handleCommunication(theRequestDetails, myOperationType);
   }
 
   private void handleServiceRequests(ServletRequestDetails theRequestDetails, String theOperationType) {
@@ -148,6 +150,7 @@ public class PushInterceptor {
       ourLog.warn("No requester");
       return;
     }
+
     final String senderId = requester.getReference();
     final String requesterType = getReferenceType(senderId);
     if (!requesterType.equals("Organization")) {
@@ -161,8 +164,9 @@ public class PushInterceptor {
       ourLog.warn("No performer set");
       return;
     }
+
     // read endpoints from Organization
-    final List<String> pushTokens = getPushTokens(performer, "push_token");
+    final List<String> pushTokens = getPushTokens(performer, "push_token", "");
 
     // send push notification to endpoints
     sendPushNotification(pushTokens, theOperationType, senderId, patientId, serviceRequestId, PUSH_APP_ID_NORMAL);
@@ -176,18 +180,18 @@ public class PushInterceptor {
     }
     final Communication myCommunication = (Communication) communication;
 
-    // check if status is in progress
-    final CommunicationStatus status = myCommunication.getStatus();
-    if (!status.getDisplay().toLowerCase().equals("in progress")) {
-      ourLog.info("Communication status is not in progress but " + status.getDisplay().toLowerCase());
-      return;
-    }
-
     // read Communication id
     final String communicationId = myCommunication.getId();
     final String requestType = getReferenceType(communicationId);
     if (!requestType.equals("Communication")) {
       ourLog.warn("Reference is not a Communication but: " + requestType);
+      return;
+    }
+
+    // check if status is 'completed' or 'aborted'
+    final CommunicationStatus status = myCommunication.getStatus();
+    if (!status.getDisplay().toLowerCase().equals("completed") && !status.getDisplay().toLowerCase().equals("aborted")) {
+      ourLog.info("Communication status is not 'completed' or 'aborted' but " + status.getDisplay().toLowerCase());
       return;
     }
 
@@ -213,7 +217,7 @@ public class PushInterceptor {
     final String senderId = sender.getReference();
     final String senderType = getReferenceType(senderId);
     if (!senderType.equals("Organization")) {
-      ourLog.warn("Requester is not an Organization but: " + senderType);
+      ourLog.warn("Sender is not an Organization but: " + senderType);
       return;
     }
 
@@ -225,7 +229,20 @@ public class PushInterceptor {
     }
 
     String app_id = PUSH_APP_ID_NORMAL;
-    final List<String> pushTokens = getPushTokens(recipient, "push_token");
+    List<String> pushTokens;
+
+    // check if topic is PHONE-CONSULT
+    if (myCommunication.hasTopic()) {
+      final CodeableConcept topic = myCommunication.getTopic();
+      if (!topic.getText().equals("PHONE-CONSULT")) {
+        ourLog.info("Communication topic is not in 'phone-consult' but " + topic.getText().toLowerCase());
+        return;
+      }
+      pushTokens.addAll(getPushTokenFromPayload(myCommunication.getPayloadFirstRep().getContentStringType().toString(), sender ,true));
+      pushTokens.addAll(getPushTokenFromPayload(myCommunication.getPayloadFirstRep().getContentStringType().toString(), recipient ,false));
+    } else {
+      pushTokens.addAll(getPushTokens(recipient, "push_token", ""));
+    }
 
     // send a push notification via Sygnal to APNS
     sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationId, PUSH_APP_ID_NORMAL);
@@ -239,18 +256,18 @@ public class PushInterceptor {
     }
     final CommunicationRequest myCommunicationRequest = (CommunicationRequest) communicationRequest;
 
-    // check if status is active
-    final CommunicationRequestStatus status = myCommunicationRequest.getStatus();
-    if (!status.getDisplay().toLowerCase().equals("active")) {
-      ourLog.info("CommunicationRequest status is not active but " + status.getDisplay().toLowerCase());
-      return;
-    }
-
     // read CommunicationRequest id
     final String communicationRequestId = myCommunicationRequest.getId();
     final String requestType = getReferenceType(communicationRequestId);
     if (!requestType.equals("CommunicationRequest")) {
       ourLog.warn("Reference is not a CommunicationRequest but: " + requestType);
+      return;
+    }
+
+    // check if status is active
+    final CommunicationRequestStatus status = myCommunicationRequest.getStatus();
+    if (!status.getDisplay().toLowerCase().equals("active") && !status.getDisplay().toLowerCase().equals("revoked")) {
+      ourLog.info("CommunicationRequest status is neither 'active' nor 'revoked' but " + status.getDisplay().toLowerCase());
       return;
     }
 
@@ -268,22 +285,22 @@ public class PushInterceptor {
     }
 
     // find requester organization
-    final Reference requester = myCommunicationRequest.getRequester();
-    if (requester == null) {
-        ourLog.warn("No requester");
+    final Reference sender = myCommunicationRequest.getSender();
+    if (sender == null) {
+        ourLog.warn("No sender");
         return;
     }
-    final String senderId = requester.getReference();
-    final String requesterType = getReferenceType(senderId);
-    if (!requesterType.equals("Organization")) {
-      ourLog.warn("Requester is not an Organization but: " + requesterType);
+    final String senderId = sender.getReference();
+    final String senderType = getReferenceType(senderId);
+    if (!senderType.equals("Organization")) {
+      ourLog.warn("Sender is not an Organization but: " + senderType);
       return;
     }
 
     // find recipient organization
     final Reference recipient = myCommunicationRequest.getRecipientFirstRep();
     if (recipient == null) {
-      ourLog.warn("No performer set");
+      ourLog.warn("No recipient set");
       return;
     }
 
@@ -294,9 +311,10 @@ public class PushInterceptor {
       // for newly created CommunicationRequests send a voip push
       app_id = PUSH_APP_ID_VOIP;
       // read endpoints from Organization
-      pushTokens = getPushTokens(recipient, "voip_token");
+      pushTokens = getPushTokens(recipient, "voip_token", "");
     } else {
-      pushTokens = getPushTokens(recipient, "push_token");
+      pushTokens = getPushTokens(recipient, "push_token", "");
+      pushTokens.addAll(getPushTokenFromPayload(myCommunicationRequest.getPayloadFirstRep().getContentStringType().toString(), sender ,true));
     }
 
     // send a push notification via Sygnal to APNS
@@ -308,7 +326,7 @@ public class PushInterceptor {
     return reference.split("/")[0];
   }
 
-  private List<String> getPushTokens(Reference organization, String token_type) {
+  private List<String> getPushTokens(Reference organization, String token_type, String device_id) {
     List<String> pushTokens = new ArrayList<String>();
     final String organizationId = organization.getReference();
     final String referenceType = getReferenceType(organizationId);
@@ -352,11 +370,37 @@ public class PushInterceptor {
       // we store the push tokens as ContactPoints
       for (ContactPoint cp : myEndpoint.getContact()) {
         JSONObject json = new JSONObject(cp.getValue());
+        if(!device_id.equals("")){
+          if(!json.getString("device_id").equals(device_id)) continue;
+        }
         pushTokens.add(json.getString(token_type));
         ourLog.info("Add token: " + json.getString(token_type));
       }
     }
     return pushTokens;
+  }
+
+  // extract device id from payload and search push token for the device
+  private List<String> getPushTokenFromPayload(String payload, Reference org, boolean sender) {
+    if (payload == null) return Collections.emptyList();
+
+    JSONObject json = new JSONObject(payload);
+    String device_id;
+
+    if (sender) {
+      if (json.has("offer")) {
+        device_id = json.getJSONObject("offer").getString("sender_device_id");
+      } else {
+        return Collections.emptyList();
+      }
+    } else {
+      if (json.has("answer")) {
+        device_id = json.getJSONObject("answer").getString("sender_device_id");
+      } else {
+        return Collections.emptyList();
+      }
+    }
+    return getPushTokens(org, "push_token", device_id);
   }
 
   // send a push notification via Sygnal to APNS
