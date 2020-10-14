@@ -169,10 +169,13 @@ public class PushInterceptor {
     final List<String> pushTokens = getPushTokens(performer, "push_token", "");
 
     // send push notification to endpoints
-    sendPushNotification(pushTokens, theOperationType, senderId, patientId, serviceRequestId, PUSH_APP_ID_NORMAL);
+    sendPushNotification(pushTokens, theOperationType, senderId, patientId, serviceRequestId, PUSH_APP_ID_NORMAL, false);
   }
 
   private void handleCommunication(ServletRequestDetails theRequestDetails, String myOperationType) {
+    // only push when Communication is updated
+    if (!myOperationType.equals("update")) return;
+
     final IBaseResource communication = theRequestDetails.getResource();
     if (communication == null || !(communication instanceof Communication)) {
       ourLog.warn("Communication is not readable");
@@ -229,23 +232,24 @@ public class PushInterceptor {
     }
 
     String app_id = PUSH_APP_ID_NORMAL;
-    List<String> pushTokens;
+    Boolean backgroundPush = false;
+    List<String> pushTokens = Collections.emptyList();
 
     // check if topic is PHONE-CONSULT
     if (myCommunication.hasTopic()) {
       final CodeableConcept topic = myCommunication.getTopic();
-      if (!topic.getText().equals("PHONE-CONSULT")) {
+      if (!topic.getText().toLowerCase().equals("phone-consult")) {
         ourLog.info("Communication topic is not in 'phone-consult' but " + topic.getText().toLowerCase());
         return;
       }
-      pushTokens.addAll(getPushTokenFromPayload(myCommunication.getPayloadFirstRep().getContentStringType().toString(), sender ,true));
+      backgroundPush = true;
       pushTokens.addAll(getPushTokenFromPayload(myCommunication.getPayloadFirstRep().getContentStringType().toString(), recipient ,false));
     } else {
       pushTokens.addAll(getPushTokens(recipient, "push_token", ""));
     }
 
     // send a push notification via Sygnal to APNS
-    sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationId, PUSH_APP_ID_NORMAL);
+    sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationId, PUSH_APP_ID_NORMAL, backgroundPush);
   }
 
   private void handleCommunicationRequests(ServletRequestDetails theRequestDetails, String myOperationType) {
@@ -265,9 +269,12 @@ public class PushInterceptor {
     }
 
     // check if status is active
-    final CommunicationRequestStatus status = myCommunicationRequest.getStatus();
-    if (!status.getDisplay().toLowerCase().equals("active") && !status.getDisplay().toLowerCase().equals("revoked")) {
-      ourLog.info("CommunicationRequest status is neither 'active' nor 'revoked' but " + status.getDisplay().toLowerCase());
+    final CommunicationRequestStatus myStatus = myCommunicationRequest.getStatus();
+    String status = myStatus.getDisplay().toLowerCase();
+    if (!status.equals("active")
+      && !status.equals("revoked")
+      && !status.equals("completed")) {
+      ourLog.info("CommunicationRequest status is not 'active', 'revoked' or 'completed' but " + status);
       return;
     }
 
@@ -303,22 +310,33 @@ public class PushInterceptor {
       ourLog.warn("No recipient set");
       return;
     }
+    final String recipientId = recipient.getReference();
+    final String recipientType = getReferenceType(senderId);
+    if (!recipientType.equals("Organization")) {
+      ourLog.warn("Recipient is not an Organization but: " + recipientType);
+      return;
+    }
 
     String app_id = PUSH_APP_ID_NORMAL;
+    Boolean backgroundPush = true;
     final List<String> pushTokens;
 
     if (myOperationType.equals("create")) {
       // for newly created CommunicationRequests send a voip push
       app_id = PUSH_APP_ID_VOIP;
+      backgroundPush = false;
       // read endpoints from Organization
       pushTokens = getPushTokens(recipient, "voip_token", "");
     } else {
+      // CommunicationRequest updated -> background push to recipients
       pushTokens = getPushTokens(recipient, "push_token", "");
-      pushTokens.addAll(getPushTokenFromPayload(myCommunicationRequest.getPayloadFirstRep().getContentStringType().toString(), sender ,true));
+      if (status.equals("completed")) {
+        pushTokens.addAll(getPushTokenFromPayload(myCommunicationRequest.getPayloadFirstRep().getContentStringType().toString(), sender ,true));
+      }
     }
 
     // send a push notification via Sygnal to APNS
-    sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationRequestId, app_id);
+    sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationRequestId, app_id, backgroundPush);
   }
 
   private String getReferenceType(String reference) {
@@ -404,7 +422,7 @@ public class PushInterceptor {
   }
 
   // send a push notification via Sygnal to APNS
-  private void sendPushNotification(List<String> pushTokens, String type, String senderId, String patientId, String requestId, String appId) {
+  private void sendPushNotification(List<String> pushTokens, String type, String senderId, String patientId, String requestId, String appId, Boolean background) {
     try {
       URL url = new URL(myPushUrl);
       HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -428,6 +446,7 @@ public class PushInterceptor {
       notification.put("request", requestId);
       notification.put("patient", patientId);
       notification.put("devices", devicelist);
+      notification.put("background", background);
 
       JSONObject content = new JSONObject();
       content.put("notification", notification);
