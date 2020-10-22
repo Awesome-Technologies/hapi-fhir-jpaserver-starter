@@ -193,8 +193,12 @@ public class PushInterceptor {
 
     // check if status is 'completed' or 'aborted'
     final CommunicationStatus status = myCommunication.getStatus();
-    if (!status.getDisplay().toLowerCase().equals("completed") && !status.getDisplay().toLowerCase().equals("aborted")) {
-      ourLog.info("Communication status is not 'completed' or 'aborted' but " + status.getDisplay().toLowerCase());
+    if (!status.getDisplay().toLowerCase().equals("completed")
+      && !status.getDisplay().toLowerCase().equals("in-progress")
+      && !status.getDisplay().toLowerCase().equals("not-done")
+      && !status.getDisplay().toLowerCase().equals("aborted")
+      ) {
+      ourLog.info("Communication status is not 'completed', 'in-progress', 'not-done' or 'aborted' but " + status.getDisplay().toLowerCase());
       return;
     }
 
@@ -245,6 +249,7 @@ public class PushInterceptor {
       backgroundPush = true;
       pushTokens.addAll(getPushTokenFromPayload(myCommunication.getPayloadFirstRep().getContentStringType().toString(), recipient ,false));
     } else {
+      if (status.getDisplay().toLowerCase().equals("completed")) return; // do not push on completed
       pushTokens.addAll(getPushTokens(recipient, "push_token", ""));
     }
 
