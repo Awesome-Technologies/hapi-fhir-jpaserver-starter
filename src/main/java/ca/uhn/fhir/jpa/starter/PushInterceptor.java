@@ -194,11 +194,11 @@ public class PushInterceptor {
     // check if status is 'completed' or 'aborted'
     final CommunicationStatus status = myCommunication.getStatus();
     if (!status.getDisplay().toLowerCase().equals("completed")
-      && !status.getDisplay().toLowerCase().equals("in-progress")
-      && !status.getDisplay().toLowerCase().equals("not-done")
+      && !status.getDisplay().toLowerCase().equals("in progress")
+      && !status.getDisplay().toLowerCase().equals("not done")
       && !status.getDisplay().toLowerCase().equals("aborted")
       ) {
-      ourLog.info("Communication status is not 'completed', 'in-progress', 'not-done' or 'aborted' but " + status.getDisplay().toLowerCase());
+      ourLog.info("Communication status is not 'completed', 'in progress', 'not done' or 'aborted' but " + status.getDisplay().toLowerCase());
       return;
     }
 
@@ -237,7 +237,7 @@ public class PushInterceptor {
 
     String app_id = PUSH_APP_ID_NORMAL;
     Boolean backgroundPush = false;
-    List<String> pushTokens = Collections.emptyList();
+    List<String> pushTokens = new ArrayList<String>();
 
     // check if topic is PHONE-CONSULT
     if (myCommunication.hasTopic()) {
@@ -396,8 +396,10 @@ public class PushInterceptor {
         if(!device_id.equals("")){
           if(!json.getString("device_id").equals(device_id)) continue;
         }
-        pushTokens.add(json.getString(token_type));
-        ourLog.info("Add token: " + json.getString(token_type));
+        if(!json.getString(token_type).equals("")){
+          pushTokens.add(json.getString(token_type));
+          ourLog.info("Add token: " + json.getString(token_type));
+        }
       }
     }
     return pushTokens;
