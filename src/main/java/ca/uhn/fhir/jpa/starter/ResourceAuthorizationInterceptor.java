@@ -75,7 +75,6 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
   @Override
   public List<IAuthRule> buildRuleList(RequestDetails theRequestDetails) {
     final String authHeader = theRequestDetails.getHeader("Authorization");
-    ourLog.info(authHeader);
 
     final BearerToken bearerToken = new BearerToken(authHeader);
 
@@ -109,8 +108,6 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       throw new AuthenticationException("No valid access role: Organization not found");
     }
 
-    ourLog.info("Added " + authorizedOrganizationList.toString() + " " + organizationEndpointList.toString());
-
     // allow creation of new resources
     if (theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.CREATE)) {
       return new RuleBuilder()
@@ -126,8 +123,6 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     }
 
     if (theRequestDetails.getResourceName().equals("Organization") || theRequestDetails.getResourceName().equals("Endpoint")) {
-      ourLog.info(authorizedOrganizationList.toString());
-      ourLog.info(organizationEndpointList.toString());
       return new RuleBuilder()
          .allow("Read all Organizations").read().resourcesOfType​("Organization").withAnyId().andThen()
          .allow("Write Organization").write().allResources().inCompartment("Organization", authorizedOrganizationList).andThen()
@@ -143,7 +138,6 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     // search all patients managed by the organization
     IFhirResourceDao<?> patientsDao = myDaoRegistry.getResourceDao("Patient");
     IBundleProvider resources = patientsDao.search(new SearchParameterMap());
-    ourLog.info(resources.size().toString() + " Patients found");
     final List<IBaseResource> patients = resources.getResources(0, resources.size());
 
     // extract patient ID if organization is managingOrganization of Patient
@@ -161,7 +155,6 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     // search all ServiceRequests for the organization
     IFhirResourceDao<?> serviceRequestdao = myDaoRegistry.getResourceDao("ServiceRequest");
     resources = serviceRequestdao.search(new SearchParameterMap());
-    ourLog.info(resources.size().toString() + " ServiceRequests found");
     final List<IBaseResource> serviceRequests = resources.getResources(0, resources.size());
 
     // extract patient ID if organization is connected with ServiceRequest
@@ -190,7 +183,6 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     // search all Communications for the organization
     IFhirResourceDao<?> communicationDao = myDaoRegistry.getResourceDao("Communication");
     resources = communicationDao.search(new SearchParameterMap());
-    ourLog.info(resources.size().toString() + " Communications found");
     final List<IBaseResource> communications = resources.getResources(0, resources.size());
 
     // extract patient ID if organization is connected with Communication
@@ -219,7 +211,6 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     // search all CommunicationRequests for the organization
     IFhirResourceDao<?> communicationRequestdao = myDaoRegistry.getResourceDao("CommunicationRequest");
     resources = communicationRequestdao.search(new SearchParameterMap());
-    ourLog.info(resources.size().toString() + " CommunicationRequests found");
     final List<IBaseResource> communicationRequests = resources.getResources(0, resources.size());
 
     // add if organization is connected with CommunicationRequest
@@ -246,7 +237,6 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
     IFhirResourceDao<?> diagnosticReportRequestdao = myDaoRegistry.getResourceDao("DiagnosticReport");
     resources = diagnosticReportRequestdao.search(new SearchParameterMap());
-    ourLog.info(resources.size().toString() + " DiagnosticReports found");
     final List<IBaseResource> diagnosticReports = resources.getResources(0, resources.size());
 
     // add DiagnosticReportID if allowed ServiceRequest is connected with
@@ -270,7 +260,6 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
     IFhirResourceDao<?> mediaRequestdao = myDaoRegistry.getResourceDao("Media");
     resources = mediaRequestdao.search(new SearchParameterMap());
-    ourLog.info(resources.size().toString() + " Media found");
     final List<IBaseResource> medias = resources.getResources(0, resources.size());
 
     // add MediaID if allowed ServiceRequest is connected with Media
@@ -287,13 +276,6 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         }
       }
     }
-
-    ourLog.info(authorizedPatientList.toString());
-    ourLog.info(authorizedServiceRequestList.toString());
-    ourLog.info(authorizedCommunicationList.toString());
-    ourLog.info(authorizedCommunicationRequestList.toString());
-    ourLog.info(authorizedDiagnosticReportList.toString());
-    ourLog.info(authorizedMediaList.toString());
 
     // If the user is a from a specific organization, we create the following rule
     // chain:

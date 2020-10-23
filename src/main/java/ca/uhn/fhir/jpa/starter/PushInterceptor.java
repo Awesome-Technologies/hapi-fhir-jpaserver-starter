@@ -119,7 +119,6 @@ public class PushInterceptor {
     // check if status is active
     final ServiceRequestStatus status = myServiceRequest.getStatus();
     if (!status.getDisplay().toLowerCase().equals("active")) {
-      ourLog.info("ServiceRequest status is not active but " + status.getDisplay().toLowerCase());
       return;
     }
 
@@ -198,7 +197,6 @@ public class PushInterceptor {
       && !status.getDisplay().toLowerCase().equals("not done")
       && !status.getDisplay().toLowerCase().equals("aborted")
       ) {
-      ourLog.info("Communication status is not 'completed', 'in progress', 'not done' or 'aborted' but " + status.getDisplay().toLowerCase());
       return;
     }
 
@@ -243,7 +241,6 @@ public class PushInterceptor {
     if (myCommunication.hasTopic()) {
       final CodeableConcept topic = myCommunication.getTopic();
       if (!topic.getText().toLowerCase().equals("phone-consult")) {
-        ourLog.info("Communication topic is not in 'phone-consult' but " + topic.getText().toLowerCase());
         return;
       }
       backgroundPush = true;
@@ -279,7 +276,6 @@ public class PushInterceptor {
     if (!status.equals("active")
       && !status.equals("revoked")
       && !status.equals("completed")) {
-      ourLog.info("CommunicationRequest status is not 'active', 'revoked' or 'completed' but " + status);
       return;
     }
 
@@ -398,7 +394,6 @@ public class PushInterceptor {
         }
         if(!json.getString(token_type).equals("")){
           pushTokens.add(json.getString(token_type));
-          ourLog.info("Add token: " + json.getString(token_type));
         }
       }
     }
@@ -464,12 +459,6 @@ public class PushInterceptor {
 
       if (conn.getResponseCode() != HttpURLConnection.HTTP_OK && conn.getResponseCode() != HttpURLConnection.HTTP_BAD_REQUEST) {
         throw new RuntimeException("Failed : HTTP error code : " + conn.getResponseCode());
-      }
-
-      ourLog.info("Output from push server .... \n");
-      BufferedReader br = new BufferedReader(new InputStreamReader((conn.getInputStream())));
-      for (String output = br.readLine(); output != null; output = br.readLine()) {
-        ourLog.info(output);
       }
 
       conn.disconnect();

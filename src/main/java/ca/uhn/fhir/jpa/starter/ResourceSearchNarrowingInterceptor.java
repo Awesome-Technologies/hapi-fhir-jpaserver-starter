@@ -72,7 +72,6 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
   @Override
   protected AuthorizedList buildAuthorizedList(RequestDetails theRequestDetails) {
     String authHeader = theRequestDetails.getHeader("Authorization");
-    ourLog.info(authHeader);
 
     final BearerToken bearerToken = new BearerToken(authHeader);
 
@@ -131,7 +130,6 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
       throw new AuthenticationException("No authorization for accessing resources");
     }
 
-    ourLog.info("Added " + authorizedResourceList.toString());
     return new AuthorizedList().addCompartments(authorizedResourceList.toArray(new String[0]));
   }
 
@@ -141,7 +139,6 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
    // search all ServiceRequests for the organization
    IFhirResourceDao<?> serviceRequestdao = myDaoRegistry.getResourceDao("ServiceRequest");
    IBundleProvider resources = serviceRequestdao.search(new SearchParameterMap());
-   ourLog.info(resources.size().toString() + " ServiceRequests found");
    final List<IBaseResource> serviceRequests = resources.getResources(0, resources.size());
 
    // extract patient ID if organization is connected with ServiceRequest
@@ -175,7 +172,6 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
    // search all ServiceRequests for the organization
    IFhirResourceDao<?> serviceRequestdao = myDaoRegistry.getResourceDao("ServiceRequest");
    IBundleProvider resources = serviceRequestdao.search(new SearchParameterMap());
-   ourLog.info(resources.size().toString() + " ServiceRequests found");
    final List<IBaseResource> serviceRequests = resources.getResources(0, resources.size());
 
    // extract patient ID if organization is connected with ServiceRequest
@@ -207,7 +203,6 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
    // search all Communications for the organization
    IFhirResourceDao<?> communicationDao = myDaoRegistry.getResourceDao("Communication");
    IBundleProvider resources = communicationDao.search(new SearchParameterMap());
-   ourLog.info(resources.size().toString() + " Communications found");
    final List<IBaseResource> communications = resources.getResources(0, resources.size());
 
    // extract patient ID if organization is connected with Communication
@@ -242,7 +237,6 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
 
     IFhirResourceDao<?> diagnosticReportRequestdao = myDaoRegistry.getResourceDao("DiagnosticReport");
     IBundleProvider resources = diagnosticReportRequestdao.search(new SearchParameterMap());
-    ourLog.info(resources.size().toString() + " DiagnosticReports found");
     final List<IBaseResource> diagnosticReports = resources.getResources(0, resources.size());
 
     // add DiagnosticReportID if allowed ServiceRequest is connected with
@@ -274,7 +268,6 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
 
     IFhirResourceDao<?> mediaRequestdao = myDaoRegistry.getResourceDao("Media");
     IBundleProvider resources = mediaRequestdao.search(new SearchParameterMap());
-    ourLog.info(resources.size().toString() + " Media found");
     final List<IBaseResource> medias = resources.getResources(0, resources.size());
 
     // add MediaID if allowed ServiceRequest is connected with Media
