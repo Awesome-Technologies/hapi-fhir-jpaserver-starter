@@ -27,15 +27,37 @@ package ca.uhn.fhir.jpa.starter;
 import org.hl7.fhir.r4.model.IdType;
 import ca.uhn.fhir.rest.server.exceptions.AuthenticationException;
 
+import com.google.common.base.Charsets;
+
+import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.io.IOUtils;
+
 import java.util.ArrayList;
 import java.util.List;
+import java.security.KeyFactory;
+import java.security.NoSuchAlgorithmException;
+import java.security.interfaces.RSAKey;
+import java.security.interfaces.RSAPublicKey;
+import java.security.PublicKey;
+import java.security.spec.EncodedKeySpec;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.X509EncodedKeySpec;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import com.auth0.jwt.JWT;
+import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.auth0.jwt.interfaces.Verification;
+import com.auth0.jwt.exceptions.JWTVerificationException;
+
+import org.springframework.core.io.DefaultResourceLoader;
+import org.springframework.core.io.Resource;
+
+import java.io.IOException;
+
 
 public class BearerToken {
   private static final org.slf4j.Logger ourLog = org.slf4j.LoggerFactory.getLogger(PushInterceptor.class);
@@ -48,6 +70,34 @@ public class BearerToken {
     if (authHeader.toUpperCase().startsWith(BEARER) == false)
       throw new AuthenticationException("Invalid Authorization header. Missing Bearer prefix");
     jwt = JWT.decode(authHeader.substring(BEARER.length()));
+    try {
+      PublicKey publicKey = null;
+      DefaultResourceLoader resourceLoader = new DefaultResourceLoader();
+      Resource resource = resourceLoader.getResource("authorization_public_key.pem");
+      String key = IOUtils.toString(resource.getInputStream(), Charsets.UTF_8);
+      String publicKeyPEM = key
+        .replace("-----BEGIN PUBLIC KEY-----", "")
+        .replaceAll(System.lineSeparator(), "")
+        .replace("-----END PUBLIC KEY-----", "");
+      byte[] encoded = Base64.decodeBase64(publicKeyPEM);
+      KeyFactory kf = KeyFactory.getInstance("RSA");
+      EncodedKeySpec keySpec = new X509EncodedKeySpec(encoded);
+      publicKey = kf.generatePublic(keySpec);
+
+      Algorithm algorithm = Algorithm.RSA256((RSAPublicKey) publicKey, null);
+
+      // accept tokens even if they expired up to a week ago
+      Verification verifier = JWT.require(algorithm).acceptExpiresAt(60 * 60 * 24 * 7);
+      verifier.build().verify(jwt);
+    } catch (JWTVerificationException e) {
+      throw new AuthenticationException("Invalid Authorization header. Signature does not match or the token has expired.");
+    } catch (IOException e) {
+      ourLog.warn("IO Error: " + e);
+    } catch (NoSuchAlgorithmException e) {
+      ourLog.warn("Could not reconstruct the public key, the given algorithm could not be found.");
+    } catch (InvalidKeySpecException e) {
+      ourLog.warn("Could not reconstruct the public key");
+    }
   }
 
   public String getHeaderJSON() {
