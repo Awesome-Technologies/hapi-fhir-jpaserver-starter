@@ -32,6 +32,8 @@ import org.apache.commons.lang3.Validate;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.instance.model.api.IIdType;
 import org.hl7.fhir.r4.model.IdType;
+import org.hl7.fhir.r4.model.Coverage;
+import org.hl7.fhir.r4.model.Observation;
 import org.hl7.fhir.r4.model.Organization;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
@@ -120,6 +122,12 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
         break;
       case "Media":
         authorizedResourceList = getMediaResources(authorizedOrganizationList);
+        break;
+      case "Observation":
+        authorizedResourceList = getObservationResources(authorizedOrganizationList);
+        break;
+      case "Coverage":
+        authorizedResourceList = getCoverageResources(authorizedOrganizationList);
         break;
       default:
         // do not restrict search, let ResourceAuthorizationInterceptor restrict access
@@ -287,5 +295,55 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
 
     // Allow all Media which are related to any authorized organization
     return authorizedMediaList;
+  }
+
+  private Set<String> getObservationResources(Set<IIdType> authorizedOrganizationList) {
+    Set<String> authorizedObservationList = new HashSet<>();
+    Set<String> authorizedPatientList = getPatientResources(authorizedOrganizationList);
+
+    IFhirResourceDao<?> observationDao = myDaoRegistry.getResourceDao("Observation");
+    IBundleProvider resources = observationDao.search(new SearchParameterMap());
+    final List<IBaseResource> observations = resources.getResources(0, resources.size());
+
+    // add ObservationID if allowed Patient is connected with Observation
+    for (IBaseResource observationRes : observations) {
+      Observation observation = (Observation) observationRes;
+      Reference subject = observation.getSubject();
+
+      for (String authorizedPatient : authorizedPatientList) {
+        if (subject != null && authorizedPatient.equals(subject.getReferenceElement().getValue())) {
+          authorizedObservationList.add("Observation/" + observationRes.getIdElement().getIdPart());
+          continue; // TODO also exit outer loop
+        }
+      }
+    }
+
+    // Allow all Observations which are related to any authorized patient
+    return authorizedObservationList;
+  }
+
+  private Set<String> getCoverageResources(Set<IIdType> authorizedOrganizationList) {
+    Set<String> authorizedCoverageList = new HashSet<>();
+    Set<String> authorizedPatientList = getPatientResources(authorizedOrganizationList);
+
+    IFhirResourceDao<?> coverageDao = myDaoRegistry.getResourceDao("Coverage");
+    IBundleProvider resources = coverageDao.search(new SearchParameterMap());
+    final List<IBaseResource> coverages = resources.getResources(0, resources.size());
+
+    // add CoverageID if allowed Patient is connected with Coverage
+    for (IBaseResource coverageRes : coverages) {
+      Coverage coverage = (Coverage) coverageRes;
+      Reference policyHolder = coverage.getPolicyHolder();
+
+      for (String authorizedPatient : authorizedPatientList) {
+        if (policyHolder != null && authorizedPatient.equals(policyHolder.getReferenceElement().getValue())) {
+          authorizedCoverageList.add("Coverage/" + coverageRes.getIdElement().getIdPart());
+          continue; // TODO also exit outer loop
+        }
+      }
+    }
+
+    // Allow all Coverages which are related to any authorized patient
+    return authorizedCoverageList;
   }
 }
