@@ -35,8 +35,10 @@ import org.hl7.fhir.instance.model.api.IIdType;
 import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Communication;
 import org.hl7.fhir.r4.model.CommunicationRequest;
+import org.hl7.fhir.r4.model.Coverage;
 import org.hl7.fhir.r4.model.DiagnosticReport;
 import org.hl7.fhir.r4.model.Media;
+import org.hl7.fhir.r4.model.Observation;
 import org.hl7.fhir.r4.model.Organization;
 import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Reference;
@@ -122,18 +124,41 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         .build();
     }
 
-    if (theRequestDetails.getResourceName().equals("Organization") || theRequestDetails.getResourceName().equals("Endpoint")) {
-      return new RuleBuilder()
-         .allow("Read all Organizations").read().resourcesOfType​("Organization").withAnyId().andThen()
-         .allow("Write Organization").write().allResources().inCompartment("Organization", authorizedOrganizationList).andThen()
-         .allow("Read Endpoint").read().allResources().inCompartment("Endpoint", organizationEndpointList).andThen()
-         .allow("Write Endpoint").write().allResources().inCompartment("Endpoint", organizationEndpointList).andThen()
-         .denyAll("Deny all")
-         .build();
+    switch(theRequestDetails.getResourceName()) {
+      case "Organization":
+      case "Endpoint":
+        return new RuleBuilder()
+           .allow("Read all Organizations").read().resourcesOfType​("Organization").withAnyId().andThen()
+           .allow("Write Organization").write().allResources().inCompartment("Organization", authorizedOrganizationList).andThen()
+           .allow("Read Endpoint").read().allResources().inCompartment("Endpoint", organizationEndpointList).andThen()
+           .allow("Write Endpoint").write().allResources().inCompartment("Endpoint", organizationEndpointList).andThen()
+           .denyAll("Deny all")
+           .build();
+      case "Patient":
+        return buildPatientRules(authorizedOrganizationList);
+      case "Communication":
+        return buildCommunicationRules(authorizedOrganizationList);
+      case "CommunicationRequest":
+        return buildCommunicationRequestRules(authorizedOrganizationList);
+      case "ServiceRequest":
+        return buildServiceRequestRules(authorizedOrganizationList);
+      case "DiagnosticReport":
+        return buildDiagnosticReportRules(authorizedOrganizationList);
+      case "Observation":
+        return buildObservationRules(authorizedOrganizationList);
+      case "Media":
+        return buildMediaRules(authorizedOrganizationList);
+      case "Coverage":
+        return buildCoverageRules(authorizedOrganizationList);
+      default: // deny per default
+        return new RuleBuilder()
+           .denyAll("Deny all")
+           .build();
     }
+  }
 
+  private Set<IIdType> getPatients(Set<IIdType> authorizedOrganizationList) {
     Set<IIdType> authorizedPatientList = new HashSet<>();
-    Set<IIdType> authorizedServiceRequestList = new HashSet<>();
 
     // search all patients managed by the organization
     IFhirResourceDao<?> patientsDao = myDaoRegistry.getResourceDao("Patient");
@@ -165,20 +190,16 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
       for (IIdType authorizedOrganization : authorizedOrganizationList) {
         if (requester != null && authorizedOrganization.getValue().equals(requester.getReferenceElement().getValue())) {
-          authorizedServiceRequestList.add(new IdType("ServiceRequest/" + srRes.getIdElement().getIdPart()));
           authorizedPatientList.add(sr.getSubject().getReferenceElement());
         } else { // no need to look into performers if requester already matched
           for (Reference performer : performers) {
             if (performer != null && authorizedOrganization.getValue().equals(performer.getReferenceElement().getValue())) {
-              authorizedServiceRequestList.add(new IdType("ServiceRequest/" + srRes.getIdElement().getIdPart()));
               authorizedPatientList.add(sr.getSubject().getReferenceElement());
             }
           }
         }
       }
     }
-
-    Set<IIdType> authorizedCommunicationList = new HashSet<>();
 
     // search all Communications for the organization
     IFhirResourceDao<?> communicationDao = myDaoRegistry.getResourceDao("Communication");
@@ -193,12 +214,10 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
       for (IIdType authorizedOrganization : authorizedOrganizationList) {
         if (sender != null && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())) {
-          authorizedCommunicationList.add(new IdType("Communication/" + com.getIdElement().getIdPart()));
           authorizedPatientList.add(com.getSubject().getReferenceElement());
         } else { // no need to look into recipients if sender already matched
           for (Reference recipient : recipients) {
             if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
-              authorizedCommunicationList.add(new IdType("Communication/" + com.getIdElement().getIdPart()));
               authorizedPatientList.add(com.getSubject().getReferenceElement());
             }
           }
@@ -206,11 +225,58 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       }
     }
 
+    return authorizedPatientList;
+  }
+
+  private List<IAuthRule> buildPatientRules(Set<IIdType> authorizedOrganizationList) {
+    Set<IIdType> authorizedPatientList = getPatients(authorizedOrganizationList);
+
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
+    if (authorizedPatientList.size() != 0) {
+      ruleBuilder.allow("Read Patient").read().allResources().inCompartment("Patient", authorizedPatientList).andThen()
+                 .allow("Write Patient").write().allResources().inCompartment("Patient", authorizedPatientList).andThen();
+    }
+    return ruleBuilder.denyAll("Deny all").build();
+  }
+
+  private List<IAuthRule> buildCommunicationRules(Set<IIdType> authorizedOrganizationList) {
+    Set<IIdType> authorizedCommunicationList = new HashSet<>();
+
+    // search all Communications for the organization
+    IFhirResourceDao<?> communicationDao = myDaoRegistry.getResourceDao("Communication");
+    IBundleProvider resources = communicationDao.search(new SearchParameterMap());
+    final List<IBaseResource> communications = resources.getResources(0, resources.size());
+
+    // extract patient ID if organization is connected with Communication
+    for (IBaseResource comms : communications) {
+      Communication com = (Communication) comms;
+      Reference sender = com.getSender();
+      List<Reference> recipients = com.getRecipient();
+
+      for (IIdType authorizedOrganization : authorizedOrganizationList) {
+        if (sender != null && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())) {
+          authorizedCommunicationList.add(new IdType("Communication/" + com.getIdElement().getIdPart()));
+        } else { // no need to look into recipients if sender already matched
+          for (Reference recipient : recipients) {
+            if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
+              authorizedCommunicationList.add(new IdType("Communication/" + com.getIdElement().getIdPart()));
+            }
+          }
+        }
+      }
+    }
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
+    return ruleBuilder.allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                      .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                      .denyAll("Deny all").build();
+  }
+
+  private List<IAuthRule> buildCommunicationRequestRules(Set<IIdType> authorizedOrganizationList) {
     Set<IIdType> authorizedCommunicationRequestList = new HashSet<>();
 
     // search all CommunicationRequests for the organization
     IFhirResourceDao<?> communicationRequestdao = myDaoRegistry.getResourceDao("CommunicationRequest");
-    resources = communicationRequestdao.search(new SearchParameterMap());
+    IBundleProvider resources = communicationRequestdao.search(new SearchParameterMap());
     final List<IBaseResource> communicationRequests = resources.getResources(0, resources.size());
 
     // add if organization is connected with CommunicationRequest
@@ -231,12 +297,55 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         }
       }
     }
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
+    return ruleBuilder.allow("Read CommunicationRequest").read().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
+                      .allow("Write CommunicationRequest").write().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
+                      .denyAll("Deny all").build();
+  }
 
+  private Set<IIdType> getServiceRequests(Set<IIdType> authorizedOrganizationList) {
+    // search all ServiceRequests for the organization
+    Set<IIdType> authorizedServiceRequestList = new HashSet<>();
+    IFhirResourceDao<?> serviceRequestdao = myDaoRegistry.getResourceDao("ServiceRequest");
+    IBundleProvider resources = serviceRequestdao.search(new SearchParameterMap());
+    final List<IBaseResource> serviceRequests = resources.getResources(0, resources.size());
+
+    // extract patient ID if organization is connected with ServiceRequest
+    for (IBaseResource srRes : serviceRequests) {
+      ServiceRequest sr = (ServiceRequest) srRes;
+      Reference requester = sr.getRequester();
+      List<Reference> performers = sr.getPerformer();
+
+      for (IIdType authorizedOrganization : authorizedOrganizationList) {
+        if (requester != null && authorizedOrganization.getValue().equals(requester.getReferenceElement().getValue())) {
+          authorizedServiceRequestList.add(new IdType("ServiceRequest/" + srRes.getIdElement().getIdPart()));
+        } else { // no need to look into performers if requester already matched
+          for (Reference performer : performers) {
+            if (performer != null && authorizedOrganization.getValue().equals(performer.getReferenceElement().getValue())) {
+              authorizedServiceRequestList.add(new IdType("ServiceRequest/" + srRes.getIdElement().getIdPart()));
+            }
+          }
+        }
+      }
+    }
+    return authorizedServiceRequestList;
+  }
+
+  private List<IAuthRule> buildServiceRequestRules(Set<IIdType> authorizedOrganizationList) {
+    Set<IIdType> authorizedServiceRequestList = getServiceRequests(authorizedOrganizationList);
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
+    return ruleBuilder.allow("Read ServiceRequest").read().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
+                      .allow("Write ServiceRequest").write().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
+                      .denyAll("Deny all").build();
+  }
+
+  private List<IAuthRule> buildDiagnosticReportRules(Set<IIdType> authorizedOrganizationList) {
     // search all DiagnosticReports for the organization
     Set<IIdType> authorizedDiagnosticReportList = new HashSet<>();
+    Set<IIdType> authorizedServiceRequestList = getServiceRequests(authorizedOrganizationList);
 
     IFhirResourceDao<?> diagnosticReportRequestdao = myDaoRegistry.getResourceDao("DiagnosticReport");
-    resources = diagnosticReportRequestdao.search(new SearchParameterMap());
+    IBundleProvider resources = diagnosticReportRequestdao.search(new SearchParameterMap());
     final List<IBaseResource> diagnosticReports = resources.getResources(0, resources.size());
 
     // add DiagnosticReportID if allowed ServiceRequest is connected with
@@ -254,12 +363,48 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         }
       }
     }
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
+    return ruleBuilder.allow("Read DiagnosticReport").read().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
+                      .allow("Write DiagnosticReport").write().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
+                      .denyAll("Deny all").build();
+  }
 
+  private List<IAuthRule> buildObservationRules(Set<IIdType> authorizedOrganizationList) {
+    // search all Observation authorized for the organization
+    Set<IIdType> authorizedObservationList = new HashSet<>();
+    Set<IIdType> authorizedPatientList = getPatients(authorizedOrganizationList);
+
+    IFhirResourceDao<?> observationDao = myDaoRegistry.getResourceDao("Observation");
+    IBundleProvider resources = observationDao.search(new SearchParameterMap());
+    final List<IBaseResource> observations = resources.getResources(0, resources.size());
+
+    // add ObservationID if allowed Patient is connected with Observation
+    for (IBaseResource observationRes : observations) {
+      Observation observation = (Observation) observationRes;
+      Reference subject = observation.getSubject();
+
+      for (IIdType authorizedPatient : authorizedPatientList) {
+        if (subject != null && authorizedPatient.getValue().equals(subject.getReferenceElement().getValue())) {
+          authorizedObservationList.add(new IdType("Observation/" + observationRes.getIdElement().getIdPart()));
+          continue; // TODO also exit outer loop
+        }
+      }
+    }
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
+    return ruleBuilder.allow("Read Observation").read().allResources().inCompartment("Observation", authorizedObservationList).andThen()
+                      .allow("Write Observation").write().allResources().inCompartment("Observation", authorizedObservationList).andThen()
+                      .allow("Read Patient").read().allResources().inCompartment("Patient", authorizedPatientList).andThen()
+                      .allow("Write Patient").write().allResources().inCompartment("Patient", authorizedPatientList).andThen()
+                      .denyAll("Deny all").build();
+  }
+
+  private List<IAuthRule> buildMediaRules(Set<IIdType> authorizedOrganizationList) {
     // search all Media authorized for the organization
     Set<IIdType> authorizedMediaList = new HashSet<>();
+    Set<IIdType> authorizedServiceRequestList = getServiceRequests(authorizedOrganizationList);
 
-    IFhirResourceDao<?> mediaRequestdao = myDaoRegistry.getResourceDao("Media");
-    resources = mediaRequestdao.search(new SearchParameterMap());
+    IFhirResourceDao<?> mediaDao = myDaoRegistry.getResourceDao("Media");
+    IBundleProvider resources = mediaDao.search(new SearchParameterMap());
     final List<IBaseResource> medias = resources.getResources(0, resources.size());
 
     // add MediaID if allowed ServiceRequest is connected with Media
@@ -276,42 +421,40 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         }
       }
     }
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
+    return ruleBuilder.allow("Read Media").read().allResources().inCompartment("Media", authorizedMediaList).andThen()
+                      .allow("Write Media").write().allResources().inCompartment("Media", authorizedMediaList).andThen()
+                      .allow("Read ServiceRequest").read().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
+                      .allow("Write ServiceRequest").write().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
+                      .denyAll("Deny all").build();
+  }
 
-    // If the user is a from a specific organization, we create the following rule
-    // chain:
-    // Allow the user to read every organization resource
-    // Allow the user to write anything in their own organization compartment
-    // Allow the user to read/write anything in their own endpoint compartment
-    // Allow the user to read/write anything in their connected servicerequest
-    // compartment
-    // Allow the user to read/write anything in their connected communication
-    // compartment
-    // Allow the user to read/write anything in their connected communicationrequest
-    // compartment
-    // Allow the user to read/write anything in their connected diagnosticreports
-    // Allow the user to read/write anything in their connected medias
-    // Allow the user to read/write anything in their connected patient compartment
-    // If a client request doesn't pass either of the above, deny it
+  private List<IAuthRule> buildCoverageRules(Set<IIdType> authorizedOrganizationList) {
+    // search all Coverage authorized for the organization
+    Set<IIdType> authorizedCoverageList = new HashSet<>();
+    Set<IIdType> authorizedPatientList = getPatients(authorizedOrganizationList);
 
-    IAuthRuleBuilder ruleBuilder = new RuleBuilder()
-          .allow("Read all Organizations").read().resourcesOfType​("Organization").withAnyId().andThen()
-          .allow("Write Organization").write().allResources().inCompartment("Organization", authorizedOrganizationList).andThen()
-          .allow("Read Endpoint").read().allResources().inCompartment("Endpoint", organizationEndpointList).andThen()
-          .allow("Write Endpoint").write().allResources().inCompartment("Endpoint", organizationEndpointList).andThen();
-    if (authorizedPatientList.size() != 0) {
-      ruleBuilder.allow("Read ServiceRequest").read().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
-          .allow("Write ServiceRequest").write().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
-          .allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
-          .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
-          .allow("Read CommunicationRequest").read().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
-          .allow("Write CommunicationRequest").write().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
-          .allow("Read DiagnosticReport").read().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
-          .allow("Write DiagnosticReport").write().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
-          .allow("Read Media").read().allResources().inCompartment("Media", authorizedMediaList).andThen()
-          .allow("Write Media").write().allResources().inCompartment("Media", authorizedMediaList).andThen()
-          .allow("Read Patient").read().allResources().inCompartment("Patient", authorizedPatientList).andThen()
-          .allow("Write Patient").write().allResources().inCompartment("Patient", authorizedPatientList).andThen();
+    IFhirResourceDao<?> coverageDao = myDaoRegistry.getResourceDao("Coverage");
+    IBundleProvider resources = coverageDao.search(new SearchParameterMap());
+    final List<IBaseResource> coverages = resources.getResources(0, resources.size());
+
+    // add CoverageID if allowed Patient is connected with Coverage
+    for (IBaseResource coverageRes : coverages) {
+      Coverage coverage = (Coverage) coverageRes;
+      Reference policyHolder = coverage.getPolicyHolder();
+
+      for (IIdType authorizedPatient : authorizedPatientList) {
+        if (policyHolder != null && authorizedPatient.getValue().equals(policyHolder.getReferenceElement().getValue())) {
+          authorizedCoverageList.add(new IdType("Coverage/" + coverageRes.getIdElement().getIdPart()));
+          continue; // TODO also exit outer loop
+        }
+      }
     }
-    return ruleBuilder.denyAll("Deny all").build();
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
+    return ruleBuilder.allow("Read Coverage").read().allResources().inCompartment("Coverage", authorizedCoverageList).andThen()
+                      .allow("Write Coverage").write().allResources().inCompartment("Coverage", authorizedCoverageList).andThen()
+                      .allow("Read Patient").read().allResources().inCompartment("Patient", authorizedPatientList).andThen()
+                      .allow("Write Patient").write().allResources().inCompartment("Patient", authorizedPatientList).andThen()
+                      .denyAll("Deny all").build();
   }
 }
