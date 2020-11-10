@@ -269,7 +269,7 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
 
 
   private Set<String> getMediaResources(Set<IIdType> authorizedOrganizationList) {
-    Set<String> authorizedServiceRequestList = getServiceRequestResources(authorizedOrganizationList);
+    Set<String> authorizedCommunicationList = getCommunicationResources(authorizedOrganizationList);
 
     // search all Media authorized for the organization
     Set<String> authorizedMediaList = new HashSet<>();
@@ -278,14 +278,14 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
     IBundleProvider resources = mediaRequestdao.search(new SearchParameterMap());
     final List<IBaseResource> medias = resources.getResources(0, resources.size());
 
-    // add MediaID if allowed ServiceRequest is connected with Media
+    // add MediaID if allowed Communication is connected with Media
     for (IBaseResource mediaRes : medias) {
       Media media = (Media) mediaRes;
-      List<Reference> basedOn = media.getBasedOn();
+      List<Reference> partOf = media.getPartOf();
 
-      for (String authorizedSR : authorizedServiceRequestList) {
-        for (Reference basedOnRef : basedOn) {
-          if (basedOnRef != null && authorizedSR.equals(basedOnRef.getReferenceElement().getValue())) {
+      for (String authorizedCom : authorizedCommunicationList) {
+        for (Reference partOfRef : partOf) {
+          if (partOfRef != null && authorizedCom.equals(partOfRef.getReferenceElement().getValue())) {
             authorizedMediaList.add("Media/" + mediaRes.getIdElement().getIdPart());
             continue; // TODO also exit outer loop
           }

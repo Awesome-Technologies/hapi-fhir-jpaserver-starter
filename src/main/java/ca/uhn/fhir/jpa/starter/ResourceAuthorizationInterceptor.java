@@ -239,7 +239,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     return ruleBuilder.denyAll("Deny all").build();
   }
 
-  private List<IAuthRule> buildCommunicationRules(Set<IIdType> authorizedOrganizationList) {
+  private Set<IIdType> getCommunications(Set<IIdType> authorizedOrganizationList) {
     Set<IIdType> authorizedCommunicationList = new HashSet<>();
 
     // search all Communications for the organization
@@ -265,6 +265,12 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         }
       }
     }
+    return authorizedCommunicationList;
+  }
+
+  private List<IAuthRule> buildCommunicationRules(Set<IIdType> authorizedOrganizationList) {
+    Set<IIdType> authorizedCommunicationList = getCommunications(authorizedOrganizationList);
+
     IAuthRuleBuilder ruleBuilder = new RuleBuilder();
     return ruleBuilder.allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
                       .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
@@ -401,21 +407,33 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
   private List<IAuthRule> buildMediaRules(Set<IIdType> authorizedOrganizationList) {
     // search all Media authorized for the organization
     Set<IIdType> authorizedMediaList = new HashSet<>();
-    Set<IIdType> authorizedServiceRequestList = getServiceRequests(authorizedOrganizationList);
-
+    Set<IIdType> authorizedDeletableMediaList = new HashSet<>();
+    Set<IIdType> authorizedCommunicationList = getCommunications(authorizedOrganizationList);
     IFhirResourceDao<?> mediaDao = myDaoRegistry.getResourceDao("Media");
+    IFhirResourceDao<?> comDao = myDaoRegistry.getResourceDao("Communication");
     IBundleProvider resources = mediaDao.search(new SearchParameterMap());
     final List<IBaseResource> medias = resources.getResources(0, resources.size());
 
     // add MediaID if allowed ServiceRequest is connected with Media
     for (IBaseResource mediaRes : medias) {
       Media media = (Media) mediaRes;
-      List<Reference> basedOn = media.getBasedOn();
+      List<Reference> partOf = media.getPartOf();
 
-      for (IIdType authorizedSR : authorizedServiceRequestList) {
-        for (Reference basedOnRef : basedOn) {
-          if (basedOnRef != null && authorizedSR.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
+      for (IIdType authorizedCom : authorizedCommunicationList) {
+        for (Reference partOfRef : partOf) {
+          if (partOfRef != null && authorizedCom.getValue().equals(partOfRef.getReferenceElement().getValue())) {
             authorizedMediaList.add(new IdType("Media/" + mediaRes.getIdElement().getIdPart()));
+            // the Communication is in preparation and I am the sender -> I am allowed to delete the Media
+            for (IIdType authorizedOrganization : authorizedOrganizationList) {
+              Communication com = (Communication) comDao.read(partOfRef.getReferenceElement());
+              Reference sender = com.getSender();
+              if (sender != null
+                  && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())
+                  && com.getStatus().getDisplay().toLowerCase().equals("preparation")
+              ) {
+                authorizedDeletableMediaList.add(new IdType("Media/" + mediaRes.getIdElement().getIdPart()));
+              }
+            }
             continue; // TODO also exit outer loop
           }
         }
@@ -424,8 +442,9 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     IAuthRuleBuilder ruleBuilder = new RuleBuilder();
     return ruleBuilder.allow("Read Media").read().allResources().inCompartment("Media", authorizedMediaList).andThen()
                       .allow("Write Media").write().allResources().inCompartment("Media", authorizedMediaList).andThen()
-                      .allow("Read ServiceRequest").read().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
-                      .allow("Write ServiceRequest").write().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
+                      .allow("Delete Media").delete().allResources().inCompartment("Media", authorizedDeletableMediaList).andThen()
+                      .allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                      .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
                       .denyAll("Deny all").build();
   }
 
