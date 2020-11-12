@@ -200,6 +200,11 @@ public class PushInterceptor {
       return;
     }
 
+    // check if Communication is already read
+    if (myCommunication.hasReceived()) {
+      return;
+    }
+
     // read patient id
     final Reference patient = myCommunication.getSubject();
     if (patient == null) {
