@@ -67,6 +67,8 @@ public class BearerToken {
   private DecodedJWT jwt;
 
   public BearerToken(String authHeader) {
+    if (authHeader == null || authHeader.equals(""))
+      throw new AuthenticationException("Missing Authorization header.");
     if (authHeader.toUpperCase().startsWith(BEARER) == false)
       throw new AuthenticationException("Invalid Authorization header. Missing Bearer prefix");
     jwt = JWT.decode(authHeader.substring(BEARER.length()));
