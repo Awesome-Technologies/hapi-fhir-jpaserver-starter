@@ -110,6 +110,14 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       throw new AuthenticationException("No valid access role: Organization not found");
     }
 
+    // allow paging
+    if (theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.GET_PAGE)) {
+      // allow all as forbidden resources were restricted for the initial search request
+      return new RuleBuilder()
+        .allowAll("Allow all")
+        .build();
+    }
+
     // allow creation of new resources
     if (theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.CREATE)) {
       return new RuleBuilder()
@@ -122,6 +130,13 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         .allow("Create Media").create().resourcesOfType​("Media").withAnyId().andThen()
         .allow("Create Coverage").create().resourcesOfType​("Coverage").withAnyId().andThen()
         .build();
+    }
+
+    // allow only resource requests from here on
+    if (theRequestDetails.getResourceName() == null) {
+      return new RuleBuilder()
+         .denyAll("Deny all")
+         .build();
     }
 
     switch(theRequestDetails.getResourceName()) {
