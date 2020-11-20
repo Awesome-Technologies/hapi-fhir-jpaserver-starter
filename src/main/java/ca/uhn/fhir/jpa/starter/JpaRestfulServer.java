@@ -43,6 +43,12 @@ public class JpaRestfulServer extends BaseJpaRestfulServer {
      */
     ResourceSearchNarrowingInterceptor resourceSearchInterceptor = new ResourceSearchNarrowingInterceptor(daoRegistry);
     registerInterceptor(resourceSearchInterceptor);
+
+    /*
+     * Add interceptor for forwarding cases
+     */
+    ForwardCaseInterceptor forwardCaseInterceptor = new ForwardCaseInterceptor(daoRegistry);
+    registerInterceptor(forwardCaseInterceptor);
   }
 
 }
