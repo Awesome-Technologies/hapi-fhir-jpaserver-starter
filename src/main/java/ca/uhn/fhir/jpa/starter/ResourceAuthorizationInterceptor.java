@@ -76,13 +76,21 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
   @Override
   public List<IAuthRule> buildRuleList(RequestDetails theRequestDetails) {
-    final String authHeader = theRequestDetails.getHeader("Authorization");
+    // allow everyone to request the metadata
+    if (theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.METADATA)) {
+      return new RuleBuilder()
+        .allowAll("Allow all")
+        .build();
+    }
 
+    final String authHeader = theRequestDetails.getHeader("Authorization");
     final BearerToken bearerToken = new BearerToken(authHeader);
 
     // Grant administrators access to everything
     if (bearerToken.isAdmin()) {
-      return new RuleBuilder().allowAll().build();
+      return new RuleBuilder()
+      .allowAll("Allow all")
+      .build();
     }
 
     // get list of authorized organizations
