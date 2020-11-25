@@ -131,7 +131,7 @@ public class BaseJpaRestfulServer extends RestfulServer {
         setServerConformanceProvider(confProvider);
       } else if (fhirVersion == FhirVersionEnum.R4) {
         IFhirSystemDao<org.hl7.fhir.r4.model.Bundle, org.hl7.fhir.r4.model.Meta> systemDao = appCtx.getBean("mySystemDaoR4", IFhirSystemDao.class);
-        JpaConformanceProviderR4 confProvider = new JpaConformanceProviderR4(this, systemDao, daoConfig, searchParamRegistry);
+        JpaConformanceProviderAMP confProvider = new JpaConformanceProviderAMP(this, systemDao, daoConfig, searchParamRegistry);
         confProvider.setImplementationDescription("HAPI FHIR R4 Server");
         setServerConformanceProvider(confProvider);
       } else if (fhirVersion == FhirVersionEnum.R5) {

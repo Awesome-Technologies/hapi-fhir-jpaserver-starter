@@ -83,6 +83,8 @@ public class HapiProperties {
   private static final String PARTITIONING_INCLUDE_PARTITION_IN_SEARCH_HASHES = "partitioning.partitioning_include_in_search_hashes";
   static final String CLIENT_ID_STRATEGY = "daoconfig.client_id_strategy";
   static final String PUSH_URL = "push.url";
+  static final String AMP_MODEL_VERSION = "amp.model.version";
+
   private static Properties ourProperties;
 
   public static boolean isElasticSearchEnabled() {
@@ -535,5 +537,8 @@ public class HapiProperties {
     return HapiProperties.getProperty(PUSH_URL);
   }
 
-}
+  public static Integer getAmpModelVersion() {
+    return getIntegerProperty(AMP_MODEL_VERSION, null);
+  }
 
+}
