@@ -24,6 +24,7 @@
 
 package ca.uhn.fhir.jpa.starter;
 
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -51,11 +52,15 @@ import ca.uhn.fhir.model.primitive.IdDt;
 import ca.uhn.fhir.rest.api.RestOperationTypeEnum;
 import ca.uhn.fhir.rest.api.server.IBundleProvider;
 import ca.uhn.fhir.rest.api.server.RequestDetails;
+import ca.uhn.fhir.rest.param.ReferenceParam;
+import ca.uhn.fhir.rest.param.ReferenceOrListParam;
 import ca.uhn.fhir.rest.server.exceptions.AuthenticationException;
 import ca.uhn.fhir.rest.server.interceptor.auth.AuthorizationInterceptor;
 import ca.uhn.fhir.rest.server.interceptor.auth.IAuthRule;
 import ca.uhn.fhir.rest.server.interceptor.auth.IAuthRuleBuilder;
 import ca.uhn.fhir.rest.server.interceptor.auth.RuleBuilder;
+
+import ca.uhn.fhir.rest.api.server.storage.ResourcePersistentId;
 
 public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
@@ -99,7 +104,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     // get all organizations
     Set<IIdType> authorizedOrganizationList = new HashSet<>();
     Set<IIdType> organizationEndpointList = new HashSet<>();
-    IFhirResourceDao<?> organizationDao = myDaoRegistry.getResourceDao("Organization");
+    IFhirResourceDao<Organization> organizationDao = myDaoRegistry.getResourceDao("Organization");
 
     // check if our organizations can be found in the DAO
     for (IIdType myOrg : myOrgIds) {
@@ -140,6 +145,13 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         .build();
     }
 
+    // if the request is a search, allow all as search narrowing has already restricted unauthorized resources
+    if (theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.SEARCH_TYPE)) {
+      return new RuleBuilder()
+        .allowAll("Allow all")
+        .build();
+    }
+
     // allow only resource requests from here on
     if (theRequestDetails.getResourceName() == null) {
       return new RuleBuilder()
@@ -158,21 +170,21 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
            .denyAll("Deny all")
            .build();
       case "Patient":
-        return buildPatientRules(authorizedOrganizationList);
+        return buildPatientRules(authorizedOrganizationList, theRequestDetails);
       case "Communication":
-        return buildCommunicationRules(authorizedOrganizationList);
+        return buildCommunicationRules(authorizedOrganizationList, theRequestDetails);
       case "CommunicationRequest":
-        return buildCommunicationRequestRules(authorizedOrganizationList);
+        return buildCommunicationRequestRules(authorizedOrganizationList, theRequestDetails);
       case "ServiceRequest":
-        return buildServiceRequestRules(authorizedOrganizationList);
+        return buildServiceRequestRules(authorizedOrganizationList, theRequestDetails);
       case "DiagnosticReport":
-        return buildDiagnosticReportRules(authorizedOrganizationList);
+        return buildDiagnosticReportRules(authorizedOrganizationList, theRequestDetails);
       case "Observation":
-        return buildObservationRules(authorizedOrganizationList);
+        return buildObservationRules(authorizedOrganizationList, theRequestDetails);
       case "Media":
-        return buildMediaRules(authorizedOrganizationList);
+        return buildMediaRules(authorizedOrganizationList, theRequestDetails);
       case "Coverage":
-        return buildCoverageRules(authorizedOrganizationList);
+        return buildCoverageRules(authorizedOrganizationList, theRequestDetails);
       default: // deny per default
         return new RuleBuilder()
            .denyAll("Deny all")
@@ -180,119 +192,163 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     }
   }
 
-  private Set<IIdType> getPatients(Set<IIdType> authorizedOrganizationList) {
+  private Set<IIdType> getPatients(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
     Set<IIdType> authorizedPatientList = new HashSet<>();
 
-    // search all patients managed by the organization
-    IFhirResourceDao<?> patientsDao = myDaoRegistry.getResourceDao("Patient");
-    IBundleProvider resources = patientsDao.search(new SearchParameterMap());
-    final List<IBaseResource> patients = resources.getResources(0, resources.size());
+    // check if the patient is managed by the organization
+    IFhirResourceDao<Patient> patientDao = myDaoRegistry.getResourceDao("Patient");
 
-    // extract patient ID if organization is managingOrganization of Patient
-    for (IBaseResource patRes : patients) {
-      Patient pat = (Patient) patRes;
-      Reference managingOrganization = pat.getManagingOrganization();
+    ReferenceOrListParam orgReferences = new ReferenceOrListParam();
 
-      for (IIdType authorizedOrganization : authorizedOrganizationList) {
-        if (managingOrganization != null && authorizedOrganization.getValue().equals(managingOrganization.getReferenceElement().getValue())) {
-          authorizedPatientList.add(new IdType("Patient/" + patRes.getIdElement().getIdPart()));
-        }
-      }
+    for (IIdType authorizedOrganization : authorizedOrganizationList) {
+      orgReferences.addOr(new ReferenceParam(authorizedOrganization.getValue()));
     }
 
-    // search all ServiceRequests for the organization
-    IFhirResourceDao<?> serviceRequestdao = myDaoRegistry.getResourceDao("ServiceRequest");
-    resources = serviceRequestdao.search(new SearchParameterMap());
-    final List<IBaseResource> serviceRequests = resources.getResources(0, resources.size());
+    SearchParameterMap orgParams = new SearchParameterMap();
+    orgParams.add(Patient.SP_ORGANIZATION, orgReferences);
 
-    // extract patient ID if organization is connected with ServiceRequest
-    for (IBaseResource srRes : serviceRequests) {
-      ServiceRequest sr = (ServiceRequest) srRes;
-      Reference requester = sr.getRequester();
-      List<Reference> performers = sr.getPerformer();
+    Set<ResourcePersistentId> searchAuthorizedPatientIdList = patientDao.searchForIds(orgParams, theRequestDetails);
 
-      for (IIdType authorizedOrganization : authorizedOrganizationList) {
-        if (requester != null && authorizedOrganization.getValue().equals(requester.getReferenceElement().getValue())) {
-          authorizedPatientList.add(sr.getSubject().getReferenceElement());
-        } else { // no need to look into performers if requester already matched
-          for (Reference performer : performers) {
-            if (performer != null && authorizedOrganization.getValue().equals(performer.getReferenceElement().getValue())) {
-              authorizedPatientList.add(sr.getSubject().getReferenceElement());
-            }
-          }
-        }
-      }
+    for (ResourcePersistentId id : searchAuthorizedPatientIdList) {
+      authorizedPatientList.add(new IdType("Patient/" + id));
     }
 
-    // search all Communications for the organization
-    IFhirResourceDao<?> communicationDao = myDaoRegistry.getResourceDao("Communication");
-    resources = communicationDao.search(new SearchParameterMap());
-    final List<IBaseResource> communications = resources.getResources(0, resources.size());
+    // check if there are ServiceRequests for the patient connected with the organization
+    IFhirResourceDao<ServiceRequest> serviceRequestdao = myDaoRegistry.getResourceDao("ServiceRequest");
+    Set<IIdType> authorizedServiceRequests = getServiceRequests(authorizedOrganizationList, theRequestDetails);
 
-    // extract patient ID if organization is connected with Communication
-    for (IBaseResource comms : communications) {
-      Communication com = (Communication) comms;
-      Reference sender = com.getSender();
-      List<Reference> recipients = com.getRecipient();
+    for (IIdType authorizedServiceRequest : authorizedServiceRequests) {
+      ServiceRequest sr = serviceRequestdao.read(authorizedServiceRequest);
+      authorizedPatientList.add(sr.getSubject().getReferenceElement());
+    }
 
-      for (IIdType authorizedOrganization : authorizedOrganizationList) {
-        if (sender != null && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())) {
-          authorizedPatientList.add(com.getSubject().getReferenceElement());
-        } else { // no need to look into recipients if sender already matched
-          for (Reference recipient : recipients) {
-            if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
-              authorizedPatientList.add(com.getSubject().getReferenceElement());
-            }
-          }
-        }
-      }
+    // check if there are Communications for the patient connected with the organization
+    IFhirResourceDao<Communication> communicationDao = myDaoRegistry.getResourceDao("Communication");
+    Set<IIdType> authorizedCommunications = getCommunications(authorizedOrganizationList, theRequestDetails);
+
+    for (IIdType authorizedCommunication : authorizedCommunications) {
+      Communication com = communicationDao.read(authorizedCommunication);
+      authorizedPatientList.add(com.getSubject().getReferenceElement());
     }
 
     return authorizedPatientList;
   }
 
-  private List<IAuthRule> buildPatientRules(Set<IIdType> authorizedOrganizationList) {
-    Set<IIdType> authorizedPatientList = getPatients(authorizedOrganizationList);
-
+  private List<IAuthRule> buildPatientRules(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
+    Set<IIdType> authorizedPatientList = new HashSet<>();
     IAuthRuleBuilder ruleBuilder = new RuleBuilder();
-    if (authorizedPatientList.size() != 0) {
-      ruleBuilder.allow("Read Patient").read().allResources().inCompartment("Patient", authorizedPatientList).andThen()
-                 .allow("Write Patient").write().allResources().inCompartment("Patient", authorizedPatientList).andThen();
+    String requestResource = theRequestDetails.getRequestPath();
+
+    // check if the patient is managed by the organization
+    IFhirResourceDao<Patient> patientDao = myDaoRegistry.getResourceDao("Patient");
+
+    ReferenceOrListParam orgReferences = new ReferenceOrListParam();
+
+    for (IIdType authorizedOrganization : authorizedOrganizationList) {
+      orgReferences.addOr(new ReferenceParam(authorizedOrganization.getValue()));
     }
-    return ruleBuilder.denyAll("Deny all").build();
-  }
 
-  private Set<IIdType> getCommunications(Set<IIdType> authorizedOrganizationList) {
-    Set<IIdType> authorizedCommunicationList = new HashSet<>();
+    SearchParameterMap orgParams = new SearchParameterMap();
+    orgParams.add(Patient.SP_ORGANIZATION, orgReferences);
 
-    // search all Communications for the organization
-    IFhirResourceDao<?> communicationDao = myDaoRegistry.getResourceDao("Communication");
-    IBundleProvider resources = communicationDao.search(new SearchParameterMap());
-    final List<IBaseResource> communications = resources.getResources(0, resources.size());
+    Set<ResourcePersistentId> searchAuthorizedPatientIdList = patientDao.searchForIds(orgParams, theRequestDetails);
 
-    // extract patient ID if organization is connected with Communication
-    for (IBaseResource comms : communications) {
-      Communication com = (Communication) comms;
-      Reference sender = com.getSender();
-      List<Reference> recipients = com.getRecipient();
-
-      for (IIdType authorizedOrganization : authorizedOrganizationList) {
-        if (sender != null && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())) {
-          authorizedCommunicationList.add(new IdType("Communication/" + com.getIdElement().getIdPart()));
-        } else { // no need to look into recipients if sender already matched
-          for (Reference recipient : recipients) {
-            if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
-              authorizedCommunicationList.add(new IdType("Communication/" + com.getIdElement().getIdPart()));
-            }
-          }
-        }
+    for (ResourcePersistentId id : searchAuthorizedPatientIdList) {
+      if (requestResource.equals("Patient/" + id)) {
+        authorizedPatientList.add(new IdType(requestResource));
+        return ruleBuilder.allow("Read Patient").read().allResources().inCompartment("Patient", authorizedPatientList).andThen()
+                     .allow("Write Patient").write().allResources().inCompartment("Patient", authorizedPatientList).andThen()
+                     .denyAll("Deny all").build();
       }
     }
+
+    // check if there are ServiceRequests for the patient connected with the organization
+    IFhirResourceDao<ServiceRequest> serviceRequestdao = myDaoRegistry.getResourceDao("ServiceRequest");
+    Set<IIdType> authorizedServiceRequests = getServiceRequests(authorizedOrganizationList, theRequestDetails);
+
+    for (IIdType authorizedServiceRequest : authorizedServiceRequests) {
+      ServiceRequest sr = serviceRequestdao.read(authorizedServiceRequest);
+      if (sr.getSubject().getReferenceElement().toString().equals(requestResource)) {
+        authorizedPatientList.add(new IdType(requestResource));
+        return ruleBuilder.allow("Read Patient").read().allResources().inCompartment("Patient", authorizedPatientList).andThen()
+                     .allow("Write Patient").write().allResources().inCompartment("Patient", authorizedPatientList).andThen()
+                     .denyAll("Deny all").build();
+      }
+    }
+
+    // check if there are Communications for the patient connected with the organization
+    IFhirResourceDao<Communication> communicationDao = myDaoRegistry.getResourceDao("Communication");
+    Set<IIdType> authorizedCommunications = getCommunications(authorizedOrganizationList, theRequestDetails);
+
+    for (IIdType authorizedCommunication : authorizedCommunications) {
+      Communication com = communicationDao.read(authorizedCommunication);
+      if (com.getSubject().getReferenceElement().toString().equals(requestResource)) {
+        authorizedPatientList.add(new IdType(requestResource));
+        return ruleBuilder.allow("Read Patient").read().allResources().inCompartment("Patient", authorizedPatientList).andThen()
+                     .allow("Write Patient").write().allResources().inCompartment("Patient", authorizedPatientList).andThen()
+                     .denyAll("Deny all").build();
+      }
+    }
+
+    return ruleBuilder.allow("Read Patient").read().allResources().inCompartment("Patient", authorizedPatientList).andThen()
+                 .allow("Write Patient").write().allResources().inCompartment("Patient", authorizedPatientList).andThen()
+                 .denyAll("Deny all").build();
+
+  }
+
+
+  private Set<IIdType> getCommunications(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
+    Set<IIdType> authorizedCommunicationList = new HashSet<>();
+    ReferenceOrListParam orgReferences = new ReferenceOrListParam();
+
+    for (IIdType authorizedOrganization : authorizedOrganizationList) {
+      orgReferences.addOr(new ReferenceParam(authorizedOrganization.getValue()));
+    }
+
+    // search all Communications for the organization
+    IFhirResourceDao<Communication> communicationDao = myDaoRegistry.getResourceDao("Communication");
+    SearchParameterMap senderParams = new SearchParameterMap();
+    senderParams.add(Communication.SP_SENDER, orgReferences);
+    SearchParameterMap recipientParams = new SearchParameterMap();
+    recipientParams.add(Communication.SP_RECIPIENT, orgReferences);
+    IBundleProvider resources = communicationDao.search(new SearchParameterMap());
+
+    Set<ResourcePersistentId> searchAuthorizedCommunicationIdList = communicationDao.searchForIds(senderParams, theRequestDetails);
+    for (ResourcePersistentId id : searchAuthorizedCommunicationIdList) {
+      authorizedCommunicationList.add(new IdType("Communication/" + id.toString()));
+    }
+
+    searchAuthorizedCommunicationIdList = communicationDao.searchForIds(recipientParams, theRequestDetails);
+    for (ResourcePersistentId id : searchAuthorizedCommunicationIdList) {
+      authorizedCommunicationList.add(new IdType("Communication/" + id.toString()));
+    }
+
     return authorizedCommunicationList;
   }
 
-  private List<IAuthRule> buildCommunicationRules(Set<IIdType> authorizedOrganizationList) {
-    Set<IIdType> authorizedCommunicationList = getCommunications(authorizedOrganizationList);
+  private List<IAuthRule> buildCommunicationRules(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
+    Set<IIdType> authorizedCommunicationList = new HashSet<>();
+
+    // read the Communication resource
+    IFhirResourceDao<Communication> communicationDao = myDaoRegistry.getResourceDao("Communication");
+    String requestResource = theRequestDetails.getRequestPath();
+
+    Communication com = communicationDao.read(new IdType(requestResource));
+
+    for (IIdType authorizedOrganization : authorizedOrganizationList) {
+      // check if organization is the sender
+      if ( authorizedOrganization.getValue().equals(com.getSender().getReferenceElement().getValue()) ) {
+        authorizedCommunicationList.add(new IdType(requestResource));
+      }
+
+      // check if organization is a recipient
+      List<Reference> recipients = com.getRecipient();
+      for (Reference recipient : recipients) {
+        if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
+          authorizedCommunicationList.add(new IdType(requestResource));
+        }
+      }
+    }
 
     IAuthRuleBuilder ruleBuilder = new RuleBuilder();
     return ruleBuilder.allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
@@ -300,203 +356,218 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
                       .denyAll("Deny all").build();
   }
 
-  private List<IAuthRule> buildCommunicationRequestRules(Set<IIdType> authorizedOrganizationList) {
+
+  private List<IAuthRule> buildCommunicationRequestRules(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
     Set<IIdType> authorizedCommunicationRequestList = new HashSet<>();
 
-    // search all CommunicationRequests for the organization
-    IFhirResourceDao<?> communicationRequestdao = myDaoRegistry.getResourceDao("CommunicationRequest");
-    IBundleProvider resources = communicationRequestdao.search(new SearchParameterMap());
-    final List<IBaseResource> communicationRequests = resources.getResources(0, resources.size());
+    // read the CommunicationRequest resource
+    IFhirResourceDao<CommunicationRequest> communicationRequestdao = myDaoRegistry.getResourceDao("CommunicationRequest");
+    String requestResource = theRequestDetails.getRequestPath();
 
-    // add if organization is connected with CommunicationRequest
-    for (IBaseResource commRes : communicationRequests) {
-      CommunicationRequest cr = (CommunicationRequest) commRes;
-      Reference sender = cr.getSender();
-      List<Reference> recipients = cr.getRecipient();
+    CommunicationRequest comReq = communicationRequestdao.read(new IdType(requestResource));
 
-      for (IIdType authorizedOrganization : authorizedOrganizationList) {
-        if (sender != null && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())) {
-          authorizedCommunicationRequestList.add(commRes.getIdElement());
-        } else { // no need to look into recipients if sender already matched
-          for (Reference recipient : recipients) {
-            if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
-              authorizedCommunicationRequestList.add(commRes.getIdElement());
-            }
-          }
+    for (IIdType authorizedOrganization : authorizedOrganizationList) {
+      // check if organization is the sender
+      if ( authorizedOrganization.getValue().equals(comReq.getSender().getReferenceElement().getValue()) ) {
+        authorizedCommunicationRequestList.add(new IdType(requestResource));
+        continue;
+      }
+
+      // check if organization is a recipient
+      List<Reference> recipients = comReq.getRecipient();
+      for (Reference recipient : recipients) {
+        if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
+          authorizedCommunicationRequestList.add(new IdType(requestResource));
+          continue;
         }
       }
     }
+
     IAuthRuleBuilder ruleBuilder = new RuleBuilder();
     return ruleBuilder.allow("Read CommunicationRequest").read().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
                       .allow("Write CommunicationRequest").write().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
                       .denyAll("Deny all").build();
   }
 
-  private Set<IIdType> getServiceRequests(Set<IIdType> authorizedOrganizationList) {
-    // search all ServiceRequests for the organization
+
+  private Set<IIdType> getServiceRequests(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
+    IFhirResourceDao<ServiceRequest> serviceRequestdao = myDaoRegistry.getResourceDao("ServiceRequest");
     Set<IIdType> authorizedServiceRequestList = new HashSet<>();
-    IFhirResourceDao<?> serviceRequestdao = myDaoRegistry.getResourceDao("ServiceRequest");
-    IBundleProvider resources = serviceRequestdao.search(new SearchParameterMap());
-    final List<IBaseResource> serviceRequests = resources.getResources(0, resources.size());
+    ReferenceOrListParam orgReferences = new ReferenceOrListParam();
 
-    // extract patient ID if organization is connected with ServiceRequest
-    for (IBaseResource srRes : serviceRequests) {
-      ServiceRequest sr = (ServiceRequest) srRes;
-      Reference requester = sr.getRequester();
-      List<Reference> performers = sr.getPerformer();
-
-      for (IIdType authorizedOrganization : authorizedOrganizationList) {
-        if (requester != null && authorizedOrganization.getValue().equals(requester.getReferenceElement().getValue())) {
-          authorizedServiceRequestList.add(new IdType("ServiceRequest/" + srRes.getIdElement().getIdPart()));
-        } else { // no need to look into performers if requester already matched
-          for (Reference performer : performers) {
-            if (performer != null && authorizedOrganization.getValue().equals(performer.getReferenceElement().getValue())) {
-              authorizedServiceRequestList.add(new IdType("ServiceRequest/" + srRes.getIdElement().getIdPart()));
-            }
-          }
-        }
-      }
+    for (IIdType authorizedOrganization : authorizedOrganizationList) {
+      orgReferences.addOr(new ReferenceParam(authorizedOrganization.getValue()));
     }
+
+    SearchParameterMap requesterParams = new SearchParameterMap();
+    requesterParams.add(ServiceRequest.SP_REQUESTER, orgReferences);
+    SearchParameterMap performerParams = new SearchParameterMap();
+    performerParams.add(ServiceRequest.SP_PERFORMER, orgReferences);
+
+    Set<ResourcePersistentId> searchAuthorizedServiceRequestIdList = serviceRequestdao.searchForIds(performerParams, theRequestDetails);
+
+    for (ResourcePersistentId id : searchAuthorizedServiceRequestIdList) {
+      authorizedServiceRequestList.add(new IdType("ServiceRequest/" + id.toString()));
+    }
+
+    searchAuthorizedServiceRequestIdList = serviceRequestdao.searchForIds(requesterParams, theRequestDetails);
+
+    for (ResourcePersistentId id : searchAuthorizedServiceRequestIdList) {
+      authorizedServiceRequestList.add(new IdType("ServiceRequest/" + id.toString()));
+    }
+
     return authorizedServiceRequestList;
   }
 
-  private List<IAuthRule> buildServiceRequestRules(Set<IIdType> authorizedOrganizationList) {
-    Set<IIdType> authorizedServiceRequestList = getServiceRequests(authorizedOrganizationList);
+  private List<IAuthRule> buildServiceRequestRules(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
+    Set<IIdType> authorizedServiceRequestList = new HashSet<>();
+
+    // read the Communication resource
+    IFhirResourceDao<ServiceRequest> serviceRequestDao = myDaoRegistry.getResourceDao("ServiceRequest");
+    String requestResource = theRequestDetails.getRequestPath();
+
+    ServiceRequest sr = serviceRequestDao.read(new IdType(requestResource));
+
+    for (IIdType authorizedOrganization : authorizedOrganizationList) {
+      // check if organization is the requester
+      if ( authorizedOrganization.getValue().equals(sr.getRequester().getReferenceElement().getValue()) ) {
+        authorizedServiceRequestList.add(new IdType(requestResource));
+      }
+
+      // check if organization is a performer
+      List<Reference> performers = sr.getPerformer();
+      for (Reference performer : performers) {
+        if (performer != null && authorizedOrganization.getValue().equals(performer.getReferenceElement().getValue())) {
+          authorizedServiceRequestList.add(new IdType(requestResource));
+        }
+      }
+    }
+
     IAuthRuleBuilder ruleBuilder = new RuleBuilder();
     return ruleBuilder.allow("Read ServiceRequest").read().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
                       .allow("Write ServiceRequest").write().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
                       .denyAll("Deny all").build();
   }
 
-  private List<IAuthRule> buildDiagnosticReportRules(Set<IIdType> authorizedOrganizationList) {
-    // search all DiagnosticReports for the organization
+
+  private List<IAuthRule> buildDiagnosticReportRules(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
     Set<IIdType> authorizedDiagnosticReportList = new HashSet<>();
-    Set<IIdType> authorizedServiceRequestList = getServiceRequests(authorizedOrganizationList);
+    Set<IIdType> authorizedServiceRequestList = getServiceRequests(authorizedOrganizationList, theRequestDetails);
 
-    IFhirResourceDao<?> diagnosticReportRequestdao = myDaoRegistry.getResourceDao("DiagnosticReport");
-    IBundleProvider resources = diagnosticReportRequestdao.search(new SearchParameterMap());
-    final List<IBaseResource> diagnosticReports = resources.getResources(0, resources.size());
+    // read the DiagnosticReport resource
+    IFhirResourceDao<DiagnosticReport> diagnosticReportDao = myDaoRegistry.getResourceDao("DiagnosticReport");
+    String requestResource = theRequestDetails.getRequestPath();
 
-    // add DiagnosticReportID if allowed ServiceRequest is connected with
-    // DiagnosticReport
-    for (IBaseResource diagRes : diagnosticReports) {
-      DiagnosticReport dr = (DiagnosticReport) diagRes;
+    DiagnosticReport dr = diagnosticReportDao.read(new IdType(requestResource));
+
+    for (IIdType authorizedSR : authorizedServiceRequestList) {
+      // check if DiagnosticReport is based on the ServiceRequest
       List<Reference> basedOn = dr.getBasedOn();
-
-      for (IIdType authorizedSR : authorizedServiceRequestList) {
-        for (Reference basedOnRef : basedOn) {
-          if (basedOnRef != null && authorizedSR.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
-            authorizedDiagnosticReportList.add(new IdType("DiagnosticReport/" + diagRes.getIdElement().getIdPart()));
-            continue; // TODO also exit outer loop
-          }
+      for (Reference basedOnRef : basedOn) {
+        if (basedOnRef != null && authorizedSR.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
+          authorizedDiagnosticReportList.add(new IdType(requestResource));
+          continue; // TODO also exit outer loop
         }
       }
     }
+
     IAuthRuleBuilder ruleBuilder = new RuleBuilder();
     return ruleBuilder.allow("Read DiagnosticReport").read().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
                       .allow("Write DiagnosticReport").write().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
                       .denyAll("Deny all").build();
   }
 
-  private List<IAuthRule> buildObservationRules(Set<IIdType> authorizedOrganizationList) {
-    // search all Observation authorized for the organization
+
+  private List<IAuthRule> buildObservationRules(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
     Set<IIdType> authorizedObservationList = new HashSet<>();
-    Set<IIdType> authorizedPatientList = getPatients(authorizedOrganizationList);
+    Set<IIdType> authorizedPatientList = getPatients(authorizedOrganizationList, theRequestDetails);
 
-    IFhirResourceDao<?> observationDao = myDaoRegistry.getResourceDao("Observation");
-    IBundleProvider resources = observationDao.search(new SearchParameterMap());
-    final List<IBaseResource> observations = resources.getResources(0, resources.size());
+    // read the Observation resource
+    IFhirResourceDao<Observation> observationDao = myDaoRegistry.getResourceDao("Observation");
+    String requestResource = theRequestDetails.getRequestPath();
 
-    // add ObservationID if allowed Patient is connected with Observation
-    for (IBaseResource observationRes : observations) {
-      Observation observation = (Observation) observationRes;
-      Reference subject = observation.getSubject();
+    // check if the Observations subject is an Patient that the organization is authorized for
+    Observation obs = observationDao.read(new IdType(requestResource));
+    Reference subject = obs.getSubject();
 
-      for (IIdType authorizedPatient : authorizedPatientList) {
-        if (subject != null && authorizedPatient.getValue().equals(subject.getReferenceElement().getValue())) {
-          authorizedObservationList.add(new IdType("Observation/" + observationRes.getIdElement().getIdPart()));
+    for (IIdType authorizedPatient : authorizedPatientList) {
+      if (subject != null && authorizedPatient.getValue().equals(subject.getReferenceElement().getValue())) {
+        authorizedObservationList.add(new IdType(requestResource));
+        continue; // TODO also exit outer loop
+      }
+    }
+
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
+    return ruleBuilder.allow("Read Observation").read().allResources().inCompartment("Observation", authorizedObservationList).andThen()
+                      .allow("Write Observation").write().allResources().inCompartment("Observation", authorizedObservationList).andThen()
+                      .denyAll("Deny all").build();
+  }
+
+
+  private List<IAuthRule> buildMediaRules(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
+    // search all Media authorized for the organization
+    Set<IIdType> authorizedMediaList = new HashSet<>();
+    Set<IIdType> authorizedDeletableMediaList = new HashSet<>();
+    Set<IIdType> authorizedCommunicationList = getCommunications(authorizedOrganizationList, theRequestDetails);
+    IFhirResourceDao<Media> mediaDao = myDaoRegistry.getResourceDao("Media");
+    IFhirResourceDao<Communication> comDao = myDaoRegistry.getResourceDao("Communication");
+    String requestResource = theRequestDetails.getRequestPath();
+
+    // read the Media resource
+    Media med = mediaDao.read(new IdType(requestResource));
+
+    // check if Media is connected with a ServiceRequest that the organization is authorized for
+    List<Reference> partOf = med.getPartOf();
+
+    for (IIdType authorizedCom : authorizedCommunicationList) {
+      for (Reference partOfRef : partOf) {
+        if (partOfRef != null && authorizedCom.getValue().equals(partOfRef.getReferenceElement().getValue())) {
+          authorizedMediaList.add(new IdType(requestResource));
+          // the Communication is in preparation and I am the sender -> I am allowed to delete the Media
+          Communication com = (Communication) comDao.read(partOfRef.getReferenceElement());
+          Reference sender = com.getSender();
+          for (IIdType authorizedOrganization : authorizedOrganizationList) {
+            if (sender != null
+                && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())
+                && com.getStatus().getDisplay().toLowerCase().equals("preparation")
+            ) {
+              authorizedDeletableMediaList.add(new IdType(requestResource));
+            }
+          }
           continue; // TODO also exit outer loop
         }
       }
     }
-    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
-    return ruleBuilder.allow("Read Observation").read().allResources().inCompartment("Observation", authorizedObservationList).andThen()
-                      .allow("Write Observation").write().allResources().inCompartment("Observation", authorizedObservationList).andThen()
-                      .allow("Read Patient").read().allResources().inCompartment("Patient", authorizedPatientList).andThen()
-                      .allow("Write Patient").write().allResources().inCompartment("Patient", authorizedPatientList).andThen()
-                      .denyAll("Deny all").build();
-  }
 
-  private List<IAuthRule> buildMediaRules(Set<IIdType> authorizedOrganizationList) {
-    // search all Media authorized for the organization
-    Set<IIdType> authorizedMediaList = new HashSet<>();
-    Set<IIdType> authorizedDeletableMediaList = new HashSet<>();
-    Set<IIdType> authorizedCommunicationList = getCommunications(authorizedOrganizationList);
-    IFhirResourceDao<?> mediaDao = myDaoRegistry.getResourceDao("Media");
-    IFhirResourceDao<?> comDao = myDaoRegistry.getResourceDao("Communication");
-    IBundleProvider resources = mediaDao.search(new SearchParameterMap());
-    final List<IBaseResource> medias = resources.getResources(0, resources.size());
-
-    // add MediaID if allowed ServiceRequest is connected with Media
-    for (IBaseResource mediaRes : medias) {
-      Media media = (Media) mediaRes;
-      List<Reference> partOf = media.getPartOf();
-
-      for (IIdType authorizedCom : authorizedCommunicationList) {
-        for (Reference partOfRef : partOf) {
-          if (partOfRef != null && authorizedCom.getValue().equals(partOfRef.getReferenceElement().getValue())) {
-            authorizedMediaList.add(new IdType("Media/" + mediaRes.getIdElement().getIdPart()));
-            // the Communication is in preparation and I am the sender -> I am allowed to delete the Media
-            for (IIdType authorizedOrganization : authorizedOrganizationList) {
-              Communication com = (Communication) comDao.read(partOfRef.getReferenceElement());
-              Reference sender = com.getSender();
-              if (sender != null
-                  && authorizedOrganization.getValue().equals(sender.getReferenceElement().getValue())
-                  && com.getStatus().getDisplay().toLowerCase().equals("preparation")
-              ) {
-                authorizedDeletableMediaList.add(new IdType("Media/" + mediaRes.getIdElement().getIdPart()));
-              }
-            }
-            continue; // TODO also exit outer loop
-          }
-        }
-      }
-    }
     IAuthRuleBuilder ruleBuilder = new RuleBuilder();
     return ruleBuilder.allow("Read Media").read().allResources().inCompartment("Media", authorizedMediaList).andThen()
                       .allow("Write Media").write().allResources().inCompartment("Media", authorizedMediaList).andThen()
                       .allow("Delete Media").delete().allResources().inCompartment("Media", authorizedDeletableMediaList).andThen()
-                      .allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
-                      .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
                       .denyAll("Deny all").build();
   }
 
-  private List<IAuthRule> buildCoverageRules(Set<IIdType> authorizedOrganizationList) {
-    // search all Coverage authorized for the organization
+
+  private List<IAuthRule> buildCoverageRules(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
     Set<IIdType> authorizedCoverageList = new HashSet<>();
-    Set<IIdType> authorizedPatientList = getPatients(authorizedOrganizationList);
+    Set<IIdType> authorizedPatientList = getPatients(authorizedOrganizationList, theRequestDetails);
 
-    IFhirResourceDao<?> coverageDao = myDaoRegistry.getResourceDao("Coverage");
-    IBundleProvider resources = coverageDao.search(new SearchParameterMap());
-    final List<IBaseResource> coverages = resources.getResources(0, resources.size());
+    // read the Coverage resource
+    IFhirResourceDao<Coverage> coverageDao = myDaoRegistry.getResourceDao("Coverage");
+    String requestResource = theRequestDetails.getRequestPath();
 
-    // add CoverageID if allowed Patient is connected with Coverage
-    for (IBaseResource coverageRes : coverages) {
-      Coverage coverage = (Coverage) coverageRes;
-      Reference policyHolder = coverage.getPolicyHolder();
+    Coverage cov = coverageDao.read(new IdType(requestResource));
+    Reference policyHolder = cov.getPolicyHolder();
 
-      for (IIdType authorizedPatient : authorizedPatientList) {
-        if (policyHolder != null && authorizedPatient.getValue().equals(policyHolder.getReferenceElement().getValue())) {
-          authorizedCoverageList.add(new IdType("Coverage/" + coverageRes.getIdElement().getIdPart()));
-          continue; // TODO also exit outer loop
-        }
+    for (IIdType authorizedPatient : authorizedPatientList) {
+      if (policyHolder != null && authorizedPatient.getValue().equals(policyHolder.getReferenceElement().getValue())) {
+        authorizedCoverageList.add(new IdType(requestResource));
+        continue; // TODO also exit outer loop
       }
     }
+
     IAuthRuleBuilder ruleBuilder = new RuleBuilder();
     return ruleBuilder.allow("Read Coverage").read().allResources().inCompartment("Coverage", authorizedCoverageList).andThen()
                       .allow("Write Coverage").write().allResources().inCompartment("Coverage", authorizedCoverageList).andThen()
-                      .allow("Read Patient").read().allResources().inCompartment("Patient", authorizedPatientList).andThen()
-                      .allow("Write Patient").write().allResources().inCompartment("Patient", authorizedPatientList).andThen()
                       .denyAll("Deny all").build();
   }
 }
