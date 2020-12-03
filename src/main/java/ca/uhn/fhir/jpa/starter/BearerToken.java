@@ -123,24 +123,8 @@ public class BearerToken {
 
   public List<IdType> getAuthorizedOrganizations() {
     List<IdType> myOrgIds = new ArrayList<>();
-    try {
-      // TODO Use JWT claims instead of decoding JSON by hand
-      // build a JSON object
-      JSONObject obj = new JSONObject(getPayloadJSON());
-      // extract the role
-      final JSONArray roles = obj.getJSONObject("realm_access").getJSONArray("roles");
-
-      for (int i = 0; i < roles.length(); i++) {
-        IdType id = new IdType(roles.getString(i));
-        if (id.hasResourceType() && id.getResourceType().equals("Organization")) myOrgIds.add(id);
-      }
-      if (myOrgIds.size() == 0) {  // Throw an HTTP 401
-        throw new AuthenticationException("No access role defined");
-      }
-    } catch (JSONException e) {  // Throw an HTTP 401
-      e.printStackTrace();
-      throw new AuthenticationException("Invalid authorization header value");
-    }
+    // TODO support multiple organizations for a user
+    myOrgIds.add(new IdType(jwt.getClaim("fhirOrganization").asString()));
     ourLog.info("Organizations " + myOrgIds.toString());
     return myOrgIds;
   }
