@@ -337,7 +337,12 @@ public class PushInterceptor {
       // CommunicationRequest updated -> background push to recipients
       pushTokens = getPushTokens(recipient, "push_token", "");
       if (status.equals("completed")) {
-        pushTokens.addAll(getPushTokenFromPayload(myCommunicationRequest.getPayloadFirstRep().getContentStringType().toString(), sender ,true));
+        pushTokens.addAll(getPushTokenFromPayload(myCommunicationRequest.getPayloadFirstRep().getContentStringType().toString(), sender, true));
+        // remove the pushToken of the device that just accepted the call to avoid that it hangs up immediately
+        List<String> callRecipients = getPushTokenFromPayload(myCommunicationRequest.getPayloadFirstRep().getContentStringType().toString(), recipient, false);
+        for (String callRecipient : callRecipients) {
+          pushTokens.remove(callRecipient);
+        }
       }
     }
 
