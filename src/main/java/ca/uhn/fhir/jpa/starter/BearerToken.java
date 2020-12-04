@@ -56,10 +56,12 @@ import com.auth0.jwt.exceptions.JWTVerificationException;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.Resource;
 
+import java.io.FileInputStream;
 import java.io.IOException;
 
 
 public class BearerToken {
+  private static final String AUTHORIZATION_PUBLIC_KEY = "authorization_public_key";
   private static final org.slf4j.Logger ourLog = org.slf4j.LoggerFactory.getLogger(PushInterceptor.class);
   private static final String BEARER = "BEARER ";
   private static final java.util.Base64.Decoder decoder = java.util.Base64.getUrlDecoder();
@@ -73,19 +75,7 @@ public class BearerToken {
       throw new AuthenticationException("Invalid Authorization header. Missing Bearer prefix");
     jwt = JWT.decode(authHeader.substring(BEARER.length()));
     try {
-      PublicKey publicKey = null;
-      DefaultResourceLoader resourceLoader = new DefaultResourceLoader();
-      Resource resource = resourceLoader.getResource("authorization_public_key.pem");
-      String key = IOUtils.toString(resource.getInputStream(), Charsets.UTF_8);
-      String publicKeyPEM = key
-        .replace("-----BEGIN PUBLIC KEY-----", "")
-        .replaceAll(System.lineSeparator(), "")
-        .replace("-----END PUBLIC KEY-----", "");
-      byte[] encoded = Base64.decodeBase64(publicKeyPEM);
-      KeyFactory kf = KeyFactory.getInstance("RSA");
-      EncodedKeySpec keySpec = new X509EncodedKeySpec(encoded);
-      publicKey = kf.generatePublic(keySpec);
-
+      PublicKey publicKey = loadPublicKey();
       Algorithm algorithm = Algorithm.RSA256((RSAPublicKey) publicKey, null);
 
       // accept tokens even if they expired up to a week ago
@@ -93,13 +83,57 @@ public class BearerToken {
       verifier.build().verify(jwt);
     } catch (JWTVerificationException e) {
       throw new AuthenticationException("Invalid Authorization header. Signature does not match or the token has expired.");
-    } catch (IOException e) {
-      ourLog.warn("IO Error: " + e);
+    }
+  }
+
+  private PublicKey loadPublicKey() {
+    String key = loadOverridePublicKey();
+
+    if (key == null) {
+      try {
+        DefaultResourceLoader resourceLoader = new DefaultResourceLoader();
+        Resource resource = resourceLoader.getResource("authorization_public_key.pem");
+        key = IOUtils.toString(resource.getInputStream(), Charsets.UTF_8);
+      } catch (IOException e) {
+        ourLog.warn("IO Error: " + e);
+      }
+    }
+
+    try {
+      String publicKeyPEM = key
+        .replace("-----BEGIN PUBLIC KEY-----", "")
+        .replaceAll(System.lineSeparator(), "")
+        .replace("-----END PUBLIC KEY-----", "");
+      byte[] encoded = Base64.decodeBase64(publicKeyPEM);
+      KeyFactory kf = KeyFactory.getInstance("RSA");
+      EncodedKeySpec keySpec = new X509EncodedKeySpec(encoded);
+      return kf.generatePublic(keySpec);
     } catch (NoSuchAlgorithmException e) {
       ourLog.warn("Could not reconstruct the public key, the given algorithm could not be found.");
     } catch (InvalidKeySpecException e) {
       ourLog.warn("Could not reconstruct the public key");
     }
+
+    return null;
+  }
+
+  /**
+   * If a configuration file path is explicitly specified via -Dauthorization_public_key=<path>, the properties there will
+   * be used to override the entries in the default authorization_public_key.pem file (currently under WEB-INF/classes)
+   *
+   * @return publicKey loaded from the explicitly specified file if there is one, or null otherwise.
+   */
+  private String loadOverridePublicKey() {
+    String keyFile = System.getProperty(AUTHORIZATION_PUBLIC_KEY);
+    if (keyFile != null) {
+      try {
+        return IOUtils.toString(new FileInputStream(keyFile), Charsets.UTF_8);
+      } catch (IOException e) {
+        ourLog.warn("IO Error: " + e);
+      }
+    }
+
+    return null;
   }
 
   public String getHeaderJSON() {
