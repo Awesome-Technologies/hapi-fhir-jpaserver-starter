@@ -370,7 +370,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       // check if organization is the sender
       if ( authorizedOrganization.getValue().equals(comReq.getSender().getReferenceElement().getValue()) ) {
         authorizedCommunicationRequestList.add(new IdType(requestResource));
-        continue;
+        break;
       }
 
       // check if organization is a recipient
@@ -378,7 +378,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       for (Reference recipient : recipients) {
         if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
           authorizedCommunicationRequestList.add(new IdType(requestResource));
-          continue;
+          break;
         }
       }
     }
@@ -428,10 +428,13 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
     ServiceRequest sr = serviceRequestDao.read(new IdType(requestResource));
 
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
+
     for (IIdType authorizedOrganization : authorizedOrganizationList) {
       // check if organization is the requester
       if ( authorizedOrganization.getValue().equals(sr.getRequester().getReferenceElement().getValue()) ) {
         authorizedServiceRequestList.add(new IdType(requestResource));
+        break;
       }
 
       // check if organization is a performer
@@ -439,14 +442,13 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       for (Reference performer : performers) {
         if (performer != null && authorizedOrganization.getValue().equals(performer.getReferenceElement().getValue())) {
           authorizedServiceRequestList.add(new IdType(requestResource));
+          return ruleBuilder.allow("Read ServiceRequest").read().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
+            .allow("Write ServiceRequest").write().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
+            .denyAll("Deny all").build();
         }
       }
     }
-
-    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
-    return ruleBuilder.allow("Read ServiceRequest").read().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
-                      .allow("Write ServiceRequest").write().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
-                      .denyAll("Deny all").build();
+    return ruleBuilder.denyAll("Deny all").build();
   }
 
 
@@ -460,21 +462,21 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
     DiagnosticReport dr = diagnosticReportDao.read(new IdType(requestResource));
 
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
+
     for (IIdType authorizedSR : authorizedServiceRequestList) {
       // check if DiagnosticReport is based on the ServiceRequest
       List<Reference> basedOn = dr.getBasedOn();
       for (Reference basedOnRef : basedOn) {
         if (basedOnRef != null && authorizedSR.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
           authorizedDiagnosticReportList.add(new IdType(requestResource));
-          continue; // TODO also exit outer loop
+          return ruleBuilder.allow("Read DiagnosticReport").read().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
+            .allow("Write DiagnosticReport").write().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
+            .denyAll("Deny all").build();
         }
       }
     }
-
-    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
-    return ruleBuilder.allow("Read DiagnosticReport").read().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
-                      .allow("Write DiagnosticReport").write().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
-                      .denyAll("Deny all").build();
+    return ruleBuilder.denyAll("Deny all").build();
   }
 
 
@@ -493,7 +495,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     for (IIdType authorizedPatient : authorizedPatientList) {
       if (subject != null && authorizedPatient.getValue().equals(subject.getReferenceElement().getValue())) {
         authorizedObservationList.add(new IdType(requestResource));
-        continue; // TODO also exit outer loop
+        break;
       }
     }
 
@@ -519,6 +521,8 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     // check if Media is connected with a ServiceRequest that the organization is authorized for
     List<Reference> partOf = med.getPartOf();
 
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
+
     for (IIdType authorizedCom : authorizedCommunicationList) {
       for (Reference partOfRef : partOf) {
         if (partOfRef != null && authorizedCom.getValue().equals(partOfRef.getReferenceElement().getValue())) {
@@ -534,16 +538,14 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
               authorizedDeletableMediaList.add(new IdType(requestResource));
             }
           }
-          continue; // TODO also exit outer loop
+          return ruleBuilder.allow("Read Media").read().allResources().inCompartment("Media", authorizedMediaList).andThen()
+            .allow("Write Media").write().allResources().inCompartment("Media", authorizedMediaList).andThen()
+            .allow("Delete Media").delete().allResources().inCompartment("Media", authorizedDeletableMediaList).andThen()
+            .denyAll("Deny all").build();
         }
       }
     }
-
-    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
-    return ruleBuilder.allow("Read Media").read().allResources().inCompartment("Media", authorizedMediaList).andThen()
-                      .allow("Write Media").write().allResources().inCompartment("Media", authorizedMediaList).andThen()
-                      .allow("Delete Media").delete().allResources().inCompartment("Media", authorizedDeletableMediaList).andThen()
-                      .denyAll("Deny all").build();
+    return ruleBuilder.denyAll("Deny all").build();
   }
 
 
@@ -561,7 +563,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     for (IIdType authorizedPatient : authorizedPatientList) {
       if (policyHolder != null && authorizedPatient.getValue().equals(policyHolder.getReferenceElement().getValue())) {
         authorizedCoverageList.add(new IdType(requestResource));
-        continue; // TODO also exit outer loop
+        break;
       }
     }
 
