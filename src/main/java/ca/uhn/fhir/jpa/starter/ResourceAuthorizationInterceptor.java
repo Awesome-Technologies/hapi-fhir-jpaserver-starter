@@ -134,14 +134,14 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     // allow creation of new resources
     if (theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.CREATE)) {
       return new RuleBuilder()
-        .allow("Create Patient").create().resourcesOfType​("Patient").withAnyId().andThen()
-        .allow("Create Communication").create().resourcesOfType​("Communication").withAnyId().andThen()
-        .allow("Create ServiceRequest").create().resourcesOfType​("ServiceRequest").withAnyId().andThen()
-        .allow("Create CommunicationRequest").create().resourcesOfType​("CommunicationRequest").withAnyId().andThen()
-        .allow("Create DiagnosticReport").create().resourcesOfType​("DiagnosticReport").withAnyId().andThen()
-        .allow("Create Observation").create().resourcesOfType​("Observation").withAnyId().andThen()
-        .allow("Create Media").create().resourcesOfType​("Media").withAnyId().andThen()
-        .allow("Create Coverage").create().resourcesOfType​("Coverage").withAnyId().andThen()
+        .allow("Create Patient").create().resourcesOfType("Patient").withAnyId().andThen()
+        .allow("Create Communication").create().resourcesOfType("Communication").withAnyId().andThen()
+        .allow("Create ServiceRequest").create().resourcesOfType("ServiceRequest").withAnyId().andThen()
+        .allow("Create CommunicationRequest").create().resourcesOfType("CommunicationRequest").withAnyId().andThen()
+        .allow("Create DiagnosticReport").create().resourcesOfType("DiagnosticReport").withAnyId().andThen()
+        .allow("Create Observation").create().resourcesOfType("Observation").withAnyId().andThen()
+        .allow("Create Media").create().resourcesOfType("Media").withAnyId().andThen()
+        .allow("Create Coverage").create().resourcesOfType("Coverage").withAnyId().andThen()
         .build();
     }
 
@@ -163,7 +163,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       case "Organization":
       case "Endpoint":
         return new RuleBuilder()
-           .allow("Read all Organizations").read().resourcesOfType​("Organization").withAnyId().andThen()
+           .allow("Read all Organizations").read().resourcesOfType("Organization").withAnyId().andThen()
            .allow("Write Organization").write().allResources().inCompartment("Organization", authorizedOrganizationList).andThen()
            .allow("Read Endpoint").read().allResources().inCompartment("Endpoint", organizationEndpointList).andThen()
            .allow("Write Endpoint").write().allResources().inCompartment("Endpoint", organizationEndpointList).andThen()
