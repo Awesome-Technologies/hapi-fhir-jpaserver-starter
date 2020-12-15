@@ -4,12 +4,6 @@ import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.rest.api.CacheControlDirective;
 import ca.uhn.fhir.rest.api.EncodingEnum;
 import ca.uhn.fhir.rest.api.MethodOutcome;
-import ca.uhn.fhir.rest.client.api.IGenericClient;
-import ca.uhn.fhir.rest.client.api.ServerValidationModeEnum;
-import ca.uhn.fhir.rest.client.interceptor.LoggingInterceptor;
-import ca.uhn.fhir.test.utilities.JettyUtil;
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.webapp.WebAppContext;
 import org.eclipse.jetty.websocket.api.Session;
 import org.eclipse.jetty.websocket.client.ClientUpgradeRequest;
 import org.eclipse.jetty.websocket.client.WebSocketClient;
@@ -25,7 +19,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
-import java.nio.file.Paths;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
@@ -35,30 +28,24 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class ExampleServerR5IT {
 
-  private static final org.slf4j.Logger ourLog = org.slf4j.LoggerFactory.getLogger(ExampleServerR5IT.class);
-  private static IGenericClient ourClient;
-  private static FhirContext ourCtx;
-  private static int ourPort;
-  private static Server ourServer;
-
   static {
     HapiProperties.forceReload();
     HapiProperties.setProperty(HapiProperties.DATASOURCE_URL, "jdbc:h2:mem:dbr5");
     HapiProperties.setProperty(HapiProperties.FHIR_VERSION, "R5");
     HapiProperties.setProperty(HapiProperties.SUBSCRIPTION_WEBSOCKET_ENABLED, "true");
-    ourCtx = FhirContext.forR5();
+    TestSetup.ourCtx = FhirContext.forR5();
   }
 
   @Test
   public void testCreateAndRead() {
-    ourLog.info("Base URL is: " + HapiProperties.getServerAddress());
+    TestSetup.ourLog.info("Base URL is: " + HapiProperties.getServerAddress());
     String methodName = "testCreateResourceConditional";
 
     Patient pt = new Patient();
     pt.addName().setFamily(methodName);
-    IIdType id = ourClient.create().resource(pt).execute().getId();
+    IIdType id = TestSetup.ourClient.create().resource(pt).execute().getId();
 
-    Patient pt2 = ourClient.read().resource(Patient.class).withId(id).execute();
+    Patient pt2 = TestSetup.ourClient.read().resource(Patient.class).withId(id).execute();
     assertEquals(methodName, pt2.getName().get(0).getFamily());
   }
 
@@ -83,11 +70,11 @@ public class ExampleServerR5IT {
       .setCode("websocket");
     subscription.setContentType("application/json");
 
-    MethodOutcome methodOutcome = ourClient.create().resource(subscription).execute();
+    MethodOutcome methodOutcome = TestSetup.ourClient.create().resource(subscription).execute();
     IIdType mySubscriptionId = methodOutcome.getId();
 
     // Wait for the subscription to be activated
-    waitForSize(1, () -> ourClient.search().forResource(Subscription.class).where(Subscription.STATUS.exactly().code("active")).cacheControl(new CacheControlDirective().setNoCache(true)).returnBundle(Bundle.class).execute().getEntry().size());
+    waitForSize(1, () -> TestSetup.ourClient.search().forResource(Subscription.class).where(Subscription.STATUS.exactly().code("active")).cacheControl(new CacheControlDirective().setNoCache(true)).returnBundle(Bundle.class).execute().getEntry().size());
 
     /*
      * Attach websocket
@@ -97,20 +84,20 @@ public class ExampleServerR5IT {
     SocketImplementation mySocketImplementation = new SocketImplementation(mySubscriptionId.getIdPart(), EncodingEnum.JSON);
 
     myWebSocketClient.start();
-    URI echoUri = new URI("ws://localhost:" + ourPort + "/hapi-fhir-jpaserver/websocket");
+    URI echoUri = new URI("ws://localhost:" + TestSetup.ourPort + "/hapi-fhir-jpaserver/websocket");
     ClientUpgradeRequest request = new ClientUpgradeRequest();
-    ourLog.info("Connecting to : {}", echoUri);
+    TestSetup.ourLog.info("Connecting to : {}", echoUri);
     Future<Session> connection = myWebSocketClient.connect(mySocketImplementation, echoUri, request);
     Session session = connection.get(2, TimeUnit.SECONDS);
 
-    ourLog.info("Connected to WS: {}", session.isOpen());
+    TestSetup.ourLog.info("Connected to WS: {}", session.isOpen());
 
     /*
      * Create a matching resource
      */
     Observation obs = new Observation();
     obs.setStatus(Enumerations.ObservationStatus.FINAL);
-    ourClient.create().resource(obs).execute();
+    TestSetup.ourClient.create().resource(obs).execute();
 
     /*
      * Ensure that we receive a ping on the websocket
@@ -120,44 +107,20 @@ public class ExampleServerR5IT {
     /*
      * Clean up
      */
-    ourClient.delete().resourceById(mySubscriptionId).execute();
+    TestSetup.ourClient.delete().resourceById(mySubscriptionId).execute();
   }
 
   @AfterAll
   public static void afterClass() throws Exception {
-    ourServer.stop();
+    TestSetup.ourServer.stop();
   }
 
   @BeforeAll
   public static void beforeClass() throws Exception {
-    String path = Paths.get("").toAbsolutePath().toString();
-
-    ourLog.info("Project base path is: {}", path);
-
-    ourServer = new Server(0);
-
-    WebAppContext webAppContext = new WebAppContext();
-    webAppContext.setContextPath("/hapi-fhir-jpaserver");
-    webAppContext.setDisplayName("HAPI FHIR");
-    webAppContext.setDescriptor(path + "/src/main/webapp/WEB-INF/web.xml");
-    webAppContext.setResourceBase(path + "/target/hapi-fhir-jpaserver-starter");
-    webAppContext.setParentLoaderPriority(true);
-
-    ourServer.setHandler(webAppContext);
-    ourServer.start();
-
-    ourPort = JettyUtil.getPortForStartedServer(ourServer);
-
-    ourCtx.getRestfulClientFactory().setServerValidationMode(ServerValidationModeEnum.NEVER);
-    ourCtx.getRestfulClientFactory().setSocketTimeout(1200 * 1000);
-    String ourServerBase = "http://localhost:" + ourPort + "/hapi-fhir-jpaserver/fhir/";
-
-    ourClient = ourCtx.newRestfulGenericClient(ourServerBase);
-    ourClient.registerInterceptor(new LoggingInterceptor(true));
+    TestSetup.init();
   }
 
   public static void main(String[] theArgs) throws Exception {
-    ourPort = 8080;
     beforeClass();
   }
 }
