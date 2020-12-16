@@ -388,7 +388,7 @@ public class PushInterceptor {
       final Endpoint myEndpoint = (Endpoint) endpoint;
       EndpointStatus myStatus = myEndpoint.getStatus();
       // ignore non-active endpoints
-      if (myStatus.toCode().toLowerCase() != "active") {
+      if (!myStatus.toCode().equalsIgnoreCase("active")) {
         continue;
       }
 
