@@ -1,15 +1,12 @@
 package ca.uhn.fhir.jpa.starter;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.Validate;
 import org.hl7.fhir.instance.model.api.IBaseResource;
@@ -26,6 +23,7 @@ import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
 import org.hl7.fhir.r4.model.ServiceRequest.ServiceRequestStatus;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import ca.uhn.fhir.interceptor.api.Hook;
@@ -35,6 +33,8 @@ import ca.uhn.fhir.jpa.api.dao.DaoRegistry;
 import ca.uhn.fhir.jpa.api.dao.IFhirResourceDao;
 import ca.uhn.fhir.model.primitive.IdDt;
 import ca.uhn.fhir.rest.server.servlet.ServletRequestDetails;
+
+import javax.annotation.Nullable;
 
 /*
  * %%
@@ -164,11 +164,17 @@ public class PushInterceptor {
       return;
     }
 
+    Map<String, Endpoint> endpointMap = new HashMap<>();
+
     // read endpoints from Organization
-    final List<String> pushTokens = getPushTokens(performer, "push_token", "");
+    final List<String> pushTokens = getPushTokens(performer, "push_token", "", endpointMap);
 
     // send push notification to endpoints
-    sendPushNotification(pushTokens, theOperationType, senderId, patientId, serviceRequestId, PUSH_APP_ID_NORMAL, false);
+    final List<String> rejectedTokens = sendPushNotification(pushTokens, theOperationType, senderId, patientId, serviceRequestId, PUSH_APP_ID_NORMAL, false);
+
+    if (rejectedTokens != null) {
+      removePushTokens(rejectedTokens, endpointMap, "push_token");
+    }
   }
 
   private void handleCommunication(ServletRequestDetails theRequestDetails, String myOperationType) {
@@ -243,20 +249,25 @@ public class PushInterceptor {
     List<String> pushTokens = new ArrayList<String>();
 
     // check if topic is PHONE-CONSULT
+    Map<String, Endpoint> endpointMap = new HashMap<>();
     if (myCommunication.hasTopic()) {
       final CodeableConcept topic = myCommunication.getTopic();
       if (!topic.getText().toLowerCase().equals("phone-consult")) {
         return;
       }
       backgroundPush = true;
-      pushTokens.addAll(getPushTokenFromPayload(myCommunication.getPayloadFirstRep().getContentStringType().toString(), recipient ,false));
+      pushTokens.addAll(getPushTokenFromPayload(myCommunication.getPayloadFirstRep().getContentStringType().toString(), recipient ,false, endpointMap));
     } else {
       if (status.getDisplay().toLowerCase().equals("completed")) return; // do not push on completed
-      pushTokens.addAll(getPushTokens(recipient, "push_token", ""));
+      pushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
     }
 
     // send a push notification via Sygnal to APNS
-    sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationId, PUSH_APP_ID_NORMAL, backgroundPush);
+    List<String> rejectedTokens = sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationId, PUSH_APP_ID_NORMAL, backgroundPush);
+
+    if (rejectedTokens != null) {
+      removePushTokens(rejectedTokens, endpointMap, "push_token");
+    }
   }
 
   private void handleCommunicationRequests(ServletRequestDetails theRequestDetails, String myOperationType) {
@@ -327,19 +338,24 @@ public class PushInterceptor {
     Boolean backgroundPush = true;
     final List<String> pushTokens;
 
+    Map<String, Endpoint> endpointMap = new HashMap<>();
+    String token_type;
+
     if (myOperationType.equals("create")) {
       // for newly created CommunicationRequests send a voip push
       app_id = PUSH_APP_ID_VOIP;
       backgroundPush = false;
       // read endpoints from Organization
-      pushTokens = getPushTokens(recipient, "voip_token", "");
+      token_type = "voip_token";
+      pushTokens = getPushTokens(recipient, token_type, "", endpointMap);
     } else {
       // CommunicationRequest updated -> background push to recipients
-      pushTokens = getPushTokens(recipient, "push_token", "");
+      token_type = "push_token";
+      pushTokens = getPushTokens(recipient, token_type, "", endpointMap);
       if (status.equals("completed")) {
-        pushTokens.addAll(getPushTokenFromPayload(myCommunicationRequest.getPayloadFirstRep().getContentStringType().toString(), sender, true));
+        pushTokens.addAll(getPushTokenFromPayload(myCommunicationRequest.getPayloadFirstRep().getContentStringType().toString(), sender, true, endpointMap));
         // remove the pushToken of the device that just accepted the call to avoid that it hangs up immediately
-        List<String> callRecipients = getPushTokenFromPayload(myCommunicationRequest.getPayloadFirstRep().getContentStringType().toString(), recipient, false);
+        List<String> callRecipients = getPushTokenFromPayload(myCommunicationRequest.getPayloadFirstRep().getContentStringType().toString(), recipient, false, endpointMap);
         for (String callRecipient : callRecipients) {
           pushTokens.remove(callRecipient);
         }
@@ -347,7 +363,11 @@ public class PushInterceptor {
     }
 
     // send a push notification via Sygnal to APNS
-    sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationRequestId, app_id, backgroundPush);
+    List<String> rejectedTokens = sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationRequestId, app_id, backgroundPush);
+
+    if (rejectedTokens != null) {
+      removePushTokens(rejectedTokens, endpointMap, token_type);
+    }
   }
 
   private String getReferenceType(String reference) {
@@ -355,7 +375,7 @@ public class PushInterceptor {
     return reference.split("/")[0];
   }
 
-  private List<String> getPushTokens(Reference organization, String token_type, String device_id) {
+  private List<String> getPushTokens(Reference organization, String token_type, String device_id, @Nullable Map<String, Endpoint> getEndpointMap) {
     List<String> pushTokens = new ArrayList<String>();
     final String organizationId = organization.getReference();
     final String referenceType = getReferenceType(organizationId);
@@ -402,8 +422,11 @@ public class PushInterceptor {
         if(!device_id.equals("")){
           if(!json.getString("device_id").equals(device_id)) continue;
         }
-        if(!json.getString(token_type).equals("")){
-          pushTokens.add(json.getString(token_type));
+        final String tokenValue = json.getString(token_type);
+        if(!tokenValue.equals("")){
+          pushTokens.add(tokenValue);
+          if (getEndpointMap != null)
+            getEndpointMap.put(tokenValue, myEndpoint);
         }
       }
     }
@@ -411,7 +434,7 @@ public class PushInterceptor {
   }
 
   // extract device id from payload and search push token for the device
-  private List<String> getPushTokenFromPayload(String payload, Reference org, boolean sender) {
+  private List<String> getPushTokenFromPayload(String payload, Reference org, boolean sender, @Nullable Map<String, Endpoint> getEndpointMap) {
     if (payload == null) return Collections.emptyList();
 
     JSONObject json = new JSONObject(payload);
@@ -430,11 +453,46 @@ public class PushInterceptor {
         return Collections.emptyList();
       }
     }
-    return getPushTokens(org, "push_token", device_id);
+    return getPushTokens(org, "push_token", device_id, getEndpointMap);
   }
 
-  // send a push notification via Sygnal to APNS
-  private void sendPushNotification(List<String> pushTokens, String type, String senderId, String patientId, String requestId, String appId, Boolean background) {
+  // Remove push tokens from endpoints in case they were rejected by sygnal
+  private void removePushTokens(List<String> pushTokens, Map<String, Endpoint> endpointMap, String token_type) {
+    List<Endpoint> updatedEndpoints = new ArrayList<>(endpointMap.size());
+    for (String token : pushTokens) {
+      if (endpointMap.containsKey(token)) {
+        final Endpoint myEndpoint = endpointMap.get(token);
+        for (ContactPoint contact: myEndpoint.getContact()) {
+          JSONObject contactPoint;
+          try {
+            contactPoint = new JSONObject(contact.getValue());
+          } catch (JSONException e) {
+            // TODO decide if something should be done here
+            continue;
+          }
+          if (contactPoint.has(token_type) && pushTokens.contains(contactPoint.getString(token_type))) {
+            contactPoint.remove(token_type);
+            // Only need to write to the ContactPoint object if we actually change the value
+            contact.setValue(contactPoint.toString());
+            updatedEndpoints.add(myEndpoint);
+          }
+        }
+      }
+    }
+
+    if (updatedEndpoints.size() > 0) {
+      IFhirResourceDao<Endpoint> endpointDao = myDaoRegistry.getResourceDao(Endpoint.class);
+      for (Endpoint myEndpoint : updatedEndpoints) {
+        endpointDao.update(myEndpoint);
+      }
+    }
+  }
+
+  // send a push notification via Sygnal to APNS, returning a list of rejected tokens or null.
+  @Nullable
+  private List<String> sendPushNotification(List<String> pushTokens, String type, String senderId, String patientId, String requestId, String appId, Boolean background) {
+    List<String> rejectedTokens = null;
+
     try {
       URL url = new URL(myPushUrl);
       HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -471,6 +529,24 @@ public class PushInterceptor {
         throw new RuntimeException("Failed : HTTP error code : " + conn.getResponseCode());
       }
 
+      if (conn.getContentType().equals("application/json")) {
+        InputStream rawContent = (InputStream)conn.getContent();
+        BufferedReader contentReader = new BufferedReader(new InputStreamReader(rawContent, StandardCharsets.UTF_8));
+        String decodedReply = contentReader.lines().collect(Collectors.joining());
+        ourLog.info(decodedReply);
+        JSONObject reply = new JSONObject(decodedReply);
+        if (reply.has("rejected")) {
+          Object rejectedKeys = reply.get("rejected");
+          if (rejectedKeys instanceof JSONArray) {
+            JSONArray keysArray = (JSONArray) rejectedKeys;
+            final List<Object> keysList = keysArray.toList();
+            if (keysList.stream().allMatch(o -> o instanceof String)) {
+              rejectedTokens = keysList.stream().map(o -> (String) o).collect(Collectors.toList());
+            }
+          }
+        }
+      }
+
       conn.disconnect();
 
     } catch (MalformedURLException e) {
@@ -479,6 +555,7 @@ public class PushInterceptor {
         e.printStackTrace();
     }
 
+    return rejectedTokens;
   }
 
 }
