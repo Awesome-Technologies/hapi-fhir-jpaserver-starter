@@ -226,7 +226,14 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
 
    searchAuthorizedCommunicationIdList = communicationDao.searchForIds(srParams, theRequestDetails);
    for (ResourcePersistentId id : searchAuthorizedCommunicationIdList) {
-     authorizedCommunicationList.add("Communication/" + id.toString());
+     // check that id is not already in list
+     if (!authorizedCommunicationList.contains("Communication/" + id.toString())) {
+       // check if communication is not in preparation
+       Communication com = communicationDao.read(new IdType("Communication/" + id));
+       if (!com.getStatus().toString().toLowerCase().equals("preparation")) {
+         authorizedCommunicationList.add("Communication/" + id.toString());
+       }
+     }
    }
 
    // Allow all Communication which are related to any authorized organization
@@ -260,26 +267,43 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
 
 
   private Set<String> getMediaResources(ReferenceOrListParam orgReferences, RequestDetails theRequestDetails) {
+    Set<String> authorizedCommunications = getCommunicationResources(orgReferences, theRequestDetails);
     Set<String> authorizedServiceRequestList = getServiceRequestResources(orgReferences, theRequestDetails);
     ReferenceOrListParam srReferences = new ReferenceOrListParam();
+    Set<String> authorizedMediaList = new HashSet<>();
 
     for (String authorizedServiceRequest : authorizedServiceRequestList) {
       srReferences.addOr(new ReferenceParam(authorizedServiceRequest));
     }
 
     // search all Media that are part of authorized ServiceRequests
-    Set<String> authorizedMediaList = new HashSet<>();
-
     IFhirResourceDao<Media> mediaDao = myDaoRegistry.getResourceDao("Media");
     SearchParameterMap basedOnParams = new SearchParameterMap();
     basedOnParams.add(Media.SP_BASED_ON, srReferences);
 
     Set<ResourcePersistentId> searchAuthorizedMediaIdList = mediaDao.searchForIds(basedOnParams, theRequestDetails);
+
     for (ResourcePersistentId id : searchAuthorizedMediaIdList) {
-      authorizedMediaList.add("Media/" + id.toString());
+      // check if media is part of authorized communication
+      Media med = mediaDao.read(new IdType("Media/" + id));
+      boolean partOf = false;
+
+      for (String authorizedCommunication : authorizedCommunications) {
+        for (Reference part : med.getPartOf()) {
+          if (part.getReference().equals(authorizedCommunication)) {
+            partOf = true;
+            break;
+          }
+        }
+
+        if (partOf) {
+          authorizedMediaList.add("Media/" + id.toString());
+          break;
+        }
+      }
     }
 
-    // Allow all Media which are related to any authorized organization
+    // Allow all Media which are related to any authorized communication
     return authorizedMediaList;
   }
 
