@@ -57,7 +57,7 @@ import org.hl7.fhir.r4.model.ServiceRequest;
 
 public class ResourceSearchNarrowingInterceptor extends SearchNarrowingInterceptor {
 
-  private static final org.slf4j.Logger ourLog = org.slf4j.LoggerFactory.getLogger(PushInterceptor.class);
+  private static final org.slf4j.Logger ourLog = org.slf4j.LoggerFactory.getLogger(ResourceSearchNarrowingInterceptor.class);
   private final DaoRegistry myDaoRegistry;
 
   /**

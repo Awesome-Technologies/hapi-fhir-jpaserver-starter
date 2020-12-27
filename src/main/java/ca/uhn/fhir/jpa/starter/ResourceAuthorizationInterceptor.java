@@ -64,7 +64,7 @@ import ca.uhn.fhir.rest.api.server.storage.ResourcePersistentId;
 
 public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
-  private static final org.slf4j.Logger ourLog = org.slf4j.LoggerFactory.getLogger(PushInterceptor.class);
+  private static final org.slf4j.Logger ourLog = org.slf4j.LoggerFactory.getLogger(ResourceAuthorizationInterceptor.class);
   private final DaoRegistry myDaoRegistry;
 
   /**

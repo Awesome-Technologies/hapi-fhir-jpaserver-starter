@@ -62,7 +62,7 @@ import java.io.IOException;
 
 public class BearerToken {
   private static final String AUTHORIZATION_PUBLIC_KEY = "authorization_public_key";
-  private static final org.slf4j.Logger ourLog = org.slf4j.LoggerFactory.getLogger(PushInterceptor.class);
+  private static final org.slf4j.Logger ourLog = org.slf4j.LoggerFactory.getLogger(BearerToken.class);
   private static final String BEARER = "BEARER ";
   private static final java.util.Base64.Decoder decoder = java.util.Base64.getUrlDecoder();
 
