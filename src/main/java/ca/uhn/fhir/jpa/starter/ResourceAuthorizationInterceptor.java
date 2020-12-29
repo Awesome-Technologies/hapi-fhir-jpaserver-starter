@@ -24,8 +24,6 @@
 
 package ca.uhn.fhir.jpa.starter;
 
-import java.util.Arrays;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -48,7 +46,6 @@ import org.hl7.fhir.r4.model.ServiceRequest;
 import ca.uhn.fhir.jpa.api.dao.DaoRegistry;
 import ca.uhn.fhir.jpa.api.dao.IFhirResourceDao;
 import ca.uhn.fhir.jpa.searchparam.SearchParameterMap;
-import ca.uhn.fhir.model.primitive.IdDt;
 import ca.uhn.fhir.rest.api.RestOperationTypeEnum;
 import ca.uhn.fhir.rest.api.server.IBundleProvider;
 import ca.uhn.fhir.rest.api.server.RequestDetails;
@@ -61,22 +58,40 @@ import ca.uhn.fhir.rest.server.interceptor.auth.IAuthRuleBuilder;
 import ca.uhn.fhir.rest.server.interceptor.auth.RuleBuilder;
 
 import ca.uhn.fhir.rest.api.server.storage.ResourcePersistentId;
+import org.springframework.beans.factory.annotation.Autowired;
 
 public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
-
   private static final org.slf4j.Logger ourLog = org.slf4j.LoggerFactory.getLogger(ResourceAuthorizationInterceptor.class);
-  private final DaoRegistry myDaoRegistry;
+
+  @Autowired
+  private DaoRegistry myDaoRegistry;
+
+  @Autowired
+  private BearerTokenFactory bearerTokenFactory = BearerToken::new;
 
   /**
    * Constructor for resource authorization interceptor
    *
    * @param theDaoRegistry The DAO registry (must not be null)
    */
-  public ResourceAuthorizationInterceptor(DaoRegistry theDaoRegistry) {
+  /* TODO: use constructor injection so that verification can still happen */
+  public ResourceAuthorizationInterceptor(DaoRegistry theDaoRegistry, BearerTokenFactory bearerTokenFactory) {
     super();
+    if (bearerTokenFactory != null) {
+      this.bearerTokenFactory = bearerTokenFactory;
+    }
 
     Validate.notNull(theDaoRegistry, "theDaoRegistry must not be null");
     myDaoRegistry = theDaoRegistry;
+  }
+
+  @Autowired
+  public void setBearerTokenFactory(BearerTokenFactory bearerTokenFactory) {
+    this.bearerTokenFactory = bearerTokenFactory;
+  }
+
+  public void setDaoRegistry(DaoRegistry myDaoRegistry) {
+    this.myDaoRegistry = myDaoRegistry;
   }
 
   @Override
@@ -89,7 +104,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     }
 
     final String authHeader = theRequestDetails.getHeader("Authorization");
-    final BearerToken bearerToken = new BearerToken(authHeader);
+    final BearerToken bearerToken = bearerTokenFactory.apply(authHeader);
 
     // Grant administrators access to everything
     if (bearerToken.isAdmin()) {
