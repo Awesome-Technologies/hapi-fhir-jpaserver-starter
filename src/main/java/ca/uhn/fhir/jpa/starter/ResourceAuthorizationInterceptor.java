@@ -448,7 +448,9 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         }
       }
     }
-    return ruleBuilder.denyAll("Deny all").build();
+    return ruleBuilder.allow("Read ServiceRequest").read().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
+      .allow("Write ServiceRequest").write().allResources().inCompartment("ServiceRequest", authorizedServiceRequestList).andThen()
+      .denyAll("Deny all").build();
   }
 
 
