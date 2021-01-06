@@ -31,6 +31,14 @@ public class JpaRestfulServer extends BaseJpaRestfulServer {
     ApplicationContext appCtx = (ApplicationContext) getServletContext()
     	      .getAttribute("org.springframework.web.context.WebApplicationContext.ROOT");
 
+    /*
+     * Add early performance measurement interceptor.
+     * Having one entry at the start and one at the end lets us measure the time
+     * that is spent executing all other interceptor's hooks.
+     */
+    PerformanceMeasurementInterceptor earlyMeasurementInterceptor = new PerformanceMeasurementInterceptor();
+    registerInterceptor(earlyMeasurementInterceptor);
+
     PushInterceptor pushInterceptor = new PushInterceptor(daoRegistry, HapiProperties.getPushUrl(), HapiProperties.getNormalAppId(), HapiProperties.getVoipAppId());
     registerInterceptor(pushInterceptor);
 
@@ -59,6 +67,11 @@ public class JpaRestfulServer extends BaseJpaRestfulServer {
      */
     ForwardCaseInterceptor forwardCaseInterceptor = new ForwardCaseInterceptor(daoRegistry);
     registerInterceptor(forwardCaseInterceptor);
-  }
 
+    /*
+     * Add second performance logging interceptor
+     */
+    PerformanceMeasurementInterceptor lateMeasurementInterceptor = new PerformanceMeasurementInterceptor();
+    registerInterceptor(lateMeasurementInterceptor);
+  }
 }
