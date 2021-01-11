@@ -123,20 +123,6 @@ public class ForwardCaseInterceptor {
       communicationDao.update(com);
     }
 
-    // find all CommunicationRequests that are based_on the original ServiceRequest
-    IFhirResourceDao<CommunicationRequest> communicationRequestdao = myDaoRegistry.getResourceDao("CommunicationRequest");
-    params = new SearchParameterMap();
-    params.add(CommunicationRequest.SP_BASED_ON, srReferences);
-    resources = communicationRequestdao.search(params);
-    final List<IBaseResource> communicationRequests = resources.getResources(0, resources.size());
-
-    // set based_on of the CommunicationRequests also to the current ServiceRequest
-    for (IBaseResource commRes : communicationRequests) {
-      CommunicationRequest cr = (CommunicationRequest) commRes;
-      cr.addBasedOn(new Reference(myServiceRequest));
-      communicationRequestdao.update(cr);
-    }
-
     // find all DiagnosticReports that are based_on the original ServiceRequest
     IFhirResourceDao<DiagnosticReport> diagnosticReportRequestdao = myDaoRegistry.getResourceDao("DiagnosticReport");
     params = new SearchParameterMap();
