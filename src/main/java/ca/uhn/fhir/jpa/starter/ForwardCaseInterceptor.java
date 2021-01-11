@@ -25,6 +25,7 @@ import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r4.model.Communication;
 import org.hl7.fhir.r4.model.CommunicationRequest;
 import org.hl7.fhir.r4.model.DiagnosticReport;
+import org.hl7.fhir.r4.model.Media;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
 
@@ -48,7 +49,7 @@ import ca.uhn.fhir.rest.api.server.IBundleProvider;
 @Interceptor
 public class ForwardCaseInterceptor {
 
-  private static final org.slf4j.Logger ourLog = org.slf4j.LoggerFactory.getLogger(PushInterceptor.class);
+  private static final org.slf4j.Logger ourLog = org.slf4j.LoggerFactory.getLogger(ForwardCaseInterceptor.class);
 
   private final DaoRegistry myDaoRegistry;
 
@@ -148,6 +149,20 @@ public class ForwardCaseInterceptor {
       DiagnosticReport dr = (DiagnosticReport) diagRes;
       dr.addBasedOn(new Reference(myServiceRequest));
       diagnosticReportRequestdao.update(dr);
+    }
+
+    // find all Media that are based_on the original ServiceRequest
+    IFhirResourceDao<Media> mediaDao = myDaoRegistry.getResourceDao("Media");
+    params = new SearchParameterMap();
+    params.add(Media.SP_BASED_ON, srReferences);
+    resources = mediaDao.search(params);
+    final List<IBaseResource> medias = resources.getResources(0, resources.size());
+
+    // set based_on of the Media also to the current ServiceRequest
+    for (IBaseResource mediaRes : medias) {
+      Media media = (Media) mediaRes;
+      media.addBasedOn(new Reference(myServiceRequest));
+      mediaDao.update(media);
     }
 
   }
