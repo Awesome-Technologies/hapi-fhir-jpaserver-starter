@@ -311,7 +311,6 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     senderParams.add(Communication.SP_SENDER, orgReferences);
     SearchParameterMap recipientParams = new SearchParameterMap();
     recipientParams.add(Communication.SP_RECIPIENT, orgReferences);
-    IBundleProvider resources = communicationDao.search(new SearchParameterMap());
 
     Set<ResourcePersistentId> searchAuthorizedCommunicationIdList = communicationDao.searchForIds(senderParams, theRequestDetails);
     for (ResourcePersistentId id : searchAuthorizedCommunicationIdList) {
@@ -323,11 +322,28 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       authorizedCommunicationList.add(new IdType("Communication/" + id.toString()));
     }
 
+    // search Communications connected to forwarded ServiceRequests
+    ReferenceOrListParam srReferences = new ReferenceOrListParam();
+    Set<IIdType> authorizedServiceRequestList = getServiceRequests(authorizedOrganizationList, theRequestDetails);
+
+    for (IIdType authorizedServiceRequest : authorizedServiceRequestList) {
+      srReferences.addOr(new ReferenceParam(authorizedServiceRequest.getValue()));
+    }
+
+    SearchParameterMap srParams = new SearchParameterMap();
+    srParams.add(Communication.SP_BASED_ON, srReferences);
+
+    searchAuthorizedCommunicationIdList = communicationDao.searchForIds(srParams, theRequestDetails);
+    for (ResourcePersistentId id : searchAuthorizedCommunicationIdList) {
+      authorizedCommunicationList.add(new IdType("Communication/" + id.toString()));
+    }
+
     return authorizedCommunicationList;
   }
 
   private List<IAuthRule> buildCommunicationRules(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
     Set<IIdType> authorizedCommunicationList = new HashSet<>();
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
 
     // read the Communication resource
     IFhirResourceDao<Communication> communicationDao = myDaoRegistry.getResourceDao("Communication");
@@ -339,6 +355,9 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       // check if organization is the sender
       if ( authorizedOrganization.getValue().equals(com.getSender().getReferenceElement().getValue()) ) {
         authorizedCommunicationList.add(new IdType(requestResource));
+        return ruleBuilder.allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                          .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                          .denyAll("Deny all").build();
       }
 
       // check if organization is a recipient
@@ -346,14 +365,28 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       for (Reference recipient : recipients) {
         if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
           authorizedCommunicationList.add(new IdType(requestResource));
+          return ruleBuilder.allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                            .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                            .denyAll("Deny all").build();
         }
       }
     }
 
-    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
-    return ruleBuilder.allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
-                      .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
-                      .denyAll("Deny all").build();
+    // check if Communication is connected with a ServiceRequest that was forwarded
+    Set<IIdType> authorizedServiceRequestList = getServiceRequests(authorizedOrganizationList, theRequestDetails);
+    List<Reference> basedOn = com.getBasedOn();
+    for (IIdType authorizedSR : authorizedServiceRequestList) {
+      for (Reference basedOnRef : basedOn) {
+        if (basedOnRef != null && authorizedSR.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
+          authorizedCommunicationList.add(new IdType(requestResource));
+          return ruleBuilder.allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                            .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                            .denyAll("Deny all").build();
+        }
+      }
+    }
+
+    return ruleBuilder.denyAll("Deny all").build();
   }
 
 
@@ -520,7 +553,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     // read the Media resource
     Media med = mediaDao.read(new IdType(requestResource));
 
-    // check if Media is connected with a ServiceRequest that the organization is authorized for
+    // check if Media is connected with a Communication that the organization is authorized for
     List<Reference> partOf = med.getPartOf();
 
     IAuthRuleBuilder ruleBuilder = new RuleBuilder();
@@ -540,6 +573,8 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
               authorizedDeletableMediaList.add(new IdType(requestResource));
             }
           }
+        }
+        if (authorizedMediaList.size() > 0) {
           return ruleBuilder.allow("Read Media").read().allResources().inCompartment("Media", authorizedMediaList).andThen()
             .allow("Write Media").write().allResources().inCompartment("Media", authorizedMediaList).andThen()
             .allow("Delete Media").delete().allResources().inCompartment("Media", authorizedDeletableMediaList).andThen()
@@ -547,6 +582,21 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         }
       }
     }
+
+    // check if Media is connected with a ServiceRequest that was forwarded
+    Set<IIdType> authorizedServiceRequestList = getServiceRequests(authorizedOrganizationList, theRequestDetails);
+    List<Reference> basedOn = med.getBasedOn();
+    for (IIdType authorizedSR : authorizedServiceRequestList) {
+      for (Reference basedOnRef : basedOn) {
+        if (basedOnRef != null && authorizedSR.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
+          authorizedMediaList.add(new IdType(requestResource));
+          return ruleBuilder.allow("Read Media").read().allResources().inCompartment("Media", authorizedMediaList).andThen()
+            .allow("Write Media").write().allResources().inCompartment("Media", authorizedMediaList).andThen()
+            .denyAll("Deny all").build();
+        }
+      }
+    }
+
     return ruleBuilder.denyAll("Deny all").build();
   }
 

@@ -202,7 +202,6 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
    senderParams.add(Communication.SP_SENDER, orgReferences);
    SearchParameterMap recipientParams = new SearchParameterMap();
    recipientParams.add(Communication.SP_RECIPIENT, orgReferences);
-   IBundleProvider resources = communicationDao.search(new SearchParameterMap());
 
    Set<ResourcePersistentId> searchAuthorizedCommunicationIdList = communicationDao.searchForIds(senderParams, theRequestDetails);
    for (ResourcePersistentId id : searchAuthorizedCommunicationIdList) {
@@ -210,6 +209,22 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
    }
 
    searchAuthorizedCommunicationIdList = communicationDao.searchForIds(recipientParams, theRequestDetails);
+   for (ResourcePersistentId id : searchAuthorizedCommunicationIdList) {
+     authorizedCommunicationList.add("Communication/" + id.toString());
+   }
+
+   // search Communications connected to forwarded ServiceRequests
+   Set<String> authorizedServiceRequestList = getServiceRequestResources(orgReferences, theRequestDetails);
+   ReferenceOrListParam srReferences = new ReferenceOrListParam();
+
+   for (String authorizedServiceRequest : authorizedServiceRequestList) {
+     srReferences.addOr(new ReferenceParam(authorizedServiceRequest));
+   }
+
+   SearchParameterMap srParams = new SearchParameterMap();
+   srParams.add(Communication.SP_BASED_ON, srReferences);
+
+   searchAuthorizedCommunicationIdList = communicationDao.searchForIds(srParams, theRequestDetails);
    for (ResourcePersistentId id : searchAuthorizedCommunicationIdList) {
      authorizedCommunicationList.add("Communication/" + id.toString());
    }
@@ -252,7 +267,7 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
       srReferences.addOr(new ReferenceParam(authorizedServiceRequest));
     }
 
-    // search all Media that are part of authorized Communications
+    // search all Media that are part of authorized ServiceRequests
     Set<String> authorizedMediaList = new HashSet<>();
 
     IFhirResourceDao<Media> mediaDao = myDaoRegistry.getResourceDao("Media");
