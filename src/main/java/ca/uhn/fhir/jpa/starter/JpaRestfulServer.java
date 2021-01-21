@@ -31,7 +31,7 @@ public class JpaRestfulServer extends BaseJpaRestfulServer {
     ApplicationContext appCtx = (ApplicationContext) getServletContext()
     	      .getAttribute("org.springframework.web.context.WebApplicationContext.ROOT");
 
-    PushInterceptor pushInterceptor = new PushInterceptor(daoRegistry, HapiProperties.getPushUrl());
+    PushInterceptor pushInterceptor = new PushInterceptor(daoRegistry, HapiProperties.getPushUrl(), HapiProperties.getNormalAppId(), HapiProperties.getVoipAppId());
     registerInterceptor(pushInterceptor);
 
     /*

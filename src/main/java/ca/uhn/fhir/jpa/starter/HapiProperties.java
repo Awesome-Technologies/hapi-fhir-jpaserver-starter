@@ -83,6 +83,8 @@ public class HapiProperties {
   private static final String PARTITIONING_INCLUDE_PARTITION_IN_SEARCH_HASHES = "partitioning.partitioning_include_in_search_hashes";
   static final String CLIENT_ID_STRATEGY = "daoconfig.client_id_strategy";
   static final String PUSH_URL = "push.url";
+  static final String NORMAL_APP_ID = "app.id.normal";
+  static final String VOIP_APP_ID = "app.id.voip";
   static final String AMP_MODEL_VERSION = "amp.model.version";
 
   private static Properties ourProperties;
@@ -535,6 +537,14 @@ public class HapiProperties {
 
   public static String getPushUrl() {
     return HapiProperties.getProperty(PUSH_URL);
+  }
+
+  public static String getNormalAppId() {
+    return HapiProperties.getProperty(NORMAL_APP_ID);
+  }
+
+  public static String getVoipAppId() {
+    return HapiProperties.getProperty(VOIP_APP_ID);
   }
 
   public static Integer getAmpModelVersion() {

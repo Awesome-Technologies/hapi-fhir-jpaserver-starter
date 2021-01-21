@@ -62,23 +62,25 @@ import javax.annotation.Nullable;
 public class PushInterceptor {
 
   private static final org.slf4j.Logger ourLog = org.slf4j.LoggerFactory.getLogger(PushInterceptor.class);
-  private static final String PUSH_APP_ID_NORMAL = "care.amp.intensiv";
-  private static final String PUSH_APP_ID_VOIP = "care.amp.intensiv.voip";
 
   private final DaoRegistry myDaoRegistry;
   private final String myPushUrl;
+  private final String myAppIdNormal;
+  private final String myAppIdVoip;
 
   /**
    * Constructor for push notification interceptor
    *
    * @param theDaoRegistry The DAO registry (must not be null)
    */
-  public PushInterceptor(DaoRegistry theDaoRegistry, String thePushUrl) {
+  public PushInterceptor(DaoRegistry theDaoRegistry, String thePushUrl, String theAppIdNormal, String theAppIdVoip) {
     super();
 
     Validate.notNull(theDaoRegistry, "theDaoRegistry must not be null");
     myDaoRegistry = theDaoRegistry;
     myPushUrl = thePushUrl;
+    myAppIdNormal = theAppIdNormal;
+    myAppIdVoip = theAppIdVoip;
   }
 
   @Hook(Pointcut.SERVER_PROCESSING_COMPLETED_NORMALLY)
@@ -170,7 +172,7 @@ public class PushInterceptor {
     final List<String> pushTokens = getPushTokens(performer, "push_token", "", endpointMap);
 
     // send push notification to endpoints
-    final List<String> rejectedTokens = sendPushNotification(pushTokens, theOperationType, senderId, patientId, serviceRequestId, PUSH_APP_ID_NORMAL, false);
+    final List<String> rejectedTokens = sendPushNotification(pushTokens, theOperationType, senderId, patientId, serviceRequestId, myAppIdNormal, false);
 
     if (rejectedTokens != null) {
       removePushTokens(rejectedTokens, endpointMap, "push_token");
@@ -244,7 +246,7 @@ public class PushInterceptor {
       return;
     }
 
-    String app_id = PUSH_APP_ID_NORMAL;
+    String app_id = myAppIdNormal;
     Boolean backgroundPush = false;
     List<String> pushTokens = new ArrayList<String>();
 
@@ -263,7 +265,7 @@ public class PushInterceptor {
     }
 
     // send a push notification via Sygnal to APNS
-    List<String> rejectedTokens = sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationId, PUSH_APP_ID_NORMAL, backgroundPush);
+    List<String> rejectedTokens = sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationId, app_id, backgroundPush);
 
     if (rejectedTokens != null) {
       removePushTokens(rejectedTokens, endpointMap, "push_token");
@@ -334,7 +336,7 @@ public class PushInterceptor {
       return;
     }
 
-    String app_id = PUSH_APP_ID_NORMAL;
+    String app_id = myAppIdNormal;
     Boolean backgroundPush = true;
     final List<String> pushTokens;
 
@@ -343,7 +345,7 @@ public class PushInterceptor {
 
     if (myOperationType.equals("create")) {
       // for newly created CommunicationRequests send a voip push
-      app_id = PUSH_APP_ID_VOIP;
+      app_id = myAppIdVoip;
       backgroundPush = false;
       // read endpoints from Organization
       token_type = "voip_token";
