@@ -145,12 +145,9 @@ public class BearerToken {
   }
 
   public Boolean isAdmin() {
-    JSONObject obj = new JSONObject(getPayloadJSON());
-    // extract the role
-    final JSONArray roles = obj.getJSONObject("realm_access").getJSONArray("roles");
-
-    for (int i = 0; i < roles.length(); i++) {
-      if (roles.getString(i).equals("Administrator")) return true;
+    // TODO support multiple organizations for a user
+    if (jwt.getClaim("fhirOrganization").asString().equals("Administrator")) {
+      return true;
     }
     return false;
   }
