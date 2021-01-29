@@ -32,6 +32,7 @@ public class HapiProperties {
   static final String ENFORCE_REFERENTIAL_INTEGRITY_ON_WRITE = "enforce_referential_integrity_on_write";
   static final String ENFORCE_REFERENTIAL_INTEGRITY_ON_DELETE = "enforce_referential_integrity_on_delete";
   static final String BINARY_STORAGE_ENABLED = "binary_storage.enabled";
+  static final String BINARY_STORAGE_DIRECTORY = "binary_storage.filesystem.directory";
   static final String ALLOW_EXTERNAL_REFERENCES = "allow_external_references";
   static final String ALLOW_MULTIPLE_DELETE = "allow_multiple_delete";
   static final String ALLOW_PLACEHOLDER_REFERENCES = "allow_placeholder_references";
@@ -244,6 +245,10 @@ public class HapiProperties {
 
   public static boolean isBinaryStorageEnabled() {
     return HapiProperties.getBooleanProperty(BINARY_STORAGE_ENABLED, true);
+  }
+
+  public static String getBinaryStorageDirectory() {
+    return HapiProperties.getProperty(BINARY_STORAGE_DIRECTORY, "");
   }
 
   public static ETagSupportEnum getEtagSupport() {

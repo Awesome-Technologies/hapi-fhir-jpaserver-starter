@@ -2,6 +2,7 @@ package ca.uhn.fhir.jpa.starter;
 
 import ca.uhn.fhir.jpa.api.config.DaoConfig;
 import ca.uhn.fhir.jpa.binstore.DatabaseBlobBinaryStorageSvcImpl;
+import ca.uhn.fhir.jpa.binstore.FilesystemBinaryStorageSvcImpl;
 import ca.uhn.fhir.jpa.binstore.IBinaryStorageSvc;
 import ca.uhn.fhir.jpa.model.config.PartitionSettings;
 import ca.uhn.fhir.jpa.model.entity.ModelConfig;
@@ -186,7 +187,9 @@ public class FhirServerConfigCommon {
   @Lazy
   @Bean
   public IBinaryStorageSvc binaryStorageSvc() {
-    DatabaseBlobBinaryStorageSvcImpl binaryStorageSvc = new DatabaseBlobBinaryStorageSvcImpl();
+    // create a filesystem storage if a storage directory is defined
+    String binaryStorageDirectory = HapiProperties.getBinaryStorageDirectory();
+    IBinaryStorageSvc binaryStorageSvc = binaryStorageDirectory.equals("") ? new DatabaseBlobBinaryStorageSvcImpl() : new FilesystemBinaryStorageSvcImpl(binaryStorageDirectory);
 
     if (HapiProperties.getMaxBinarySize() != null) {
       binaryStorageSvc.setMaximumBinarySize(HapiProperties.getMaxBinarySize());
