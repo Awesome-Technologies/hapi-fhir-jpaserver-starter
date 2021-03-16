@@ -56,9 +56,12 @@ public class JpaConformanceProviderAMP extends JpaConformanceProviderR4 {
   public CapabilityStatement getServerConformance(HttpServletRequest theRequest, RequestDetails theRequestDetails) {
     CapabilityStatement retVal = myCachedValue;
     Integer modelVersion = HapiProperties.getAmpModelVersion();
+    Integer pushVersion = HapiProperties.getAmpPushModelVersion();
 
     retVal = super.getServerConformance(theRequest, theRequestDetails);
     retVal.addExtension(new Extension("institute.amp.model-version", new IntegerType(modelVersion)));
+    retVal.addExtension(new Extension("clinic.amp.model-version", new IntegerType(modelVersion)));
+    retVal.addExtension(new Extension("clinic.amp.push-version", new IntegerType(pushVersion)));
 
     myCachedValue = retVal;
     return retVal;

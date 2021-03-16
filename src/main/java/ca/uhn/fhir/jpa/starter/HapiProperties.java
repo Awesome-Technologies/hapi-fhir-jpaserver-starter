@@ -87,6 +87,7 @@ public class HapiProperties {
   static final String NORMAL_APP_ID = "app.id.normal";
   static final String VOIP_APP_ID = "app.id.voip";
   static final String AMP_MODEL_VERSION = "amp.model.version";
+  static final String AMP_PUSH_MODEL_VERSION = "amp.push.version";
 
   private static Properties ourProperties;
 
@@ -554,6 +555,10 @@ public class HapiProperties {
 
   public static Integer getAmpModelVersion() {
     return getIntegerProperty(AMP_MODEL_VERSION, null);
+  }
+
+  public static Integer getAmpPushModelVersion() {
+    return getIntegerProperty(AMP_PUSH_MODEL_VERSION, null);
   }
 
 }
