@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020  Awesome Technologies Innovationslabor GmbH. All rights reserved.
+ * Copyright (C) 2020, 2021 Awesome Technologies Innovationslabor GmbH. All rights reserved.
  *
  *
  * ResourceAuthorizationInterceptor.java is free software: you can redistribute it and/or modify it under the
@@ -42,10 +42,13 @@ import org.hl7.fhir.r4.model.Organization;
 import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
+import org.hl7.fhir.r4.model.ServiceRequest.ServiceRequestStatus;
+import org.hl7.fhir.r4.model.Communication.CommunicationStatus;
 
 import ca.uhn.fhir.jpa.api.dao.DaoRegistry;
 import ca.uhn.fhir.jpa.api.dao.IFhirResourceDao;
 import ca.uhn.fhir.jpa.searchparam.SearchParameterMap;
+import ca.uhn.fhir.model.primitive.IdDt;
 import ca.uhn.fhir.rest.api.RestOperationTypeEnum;
 import ca.uhn.fhir.rest.api.server.IBundleProvider;
 import ca.uhn.fhir.rest.api.server.RequestDetails;
@@ -146,18 +149,105 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         .build();
     }
 
-    // allow creation of new resources
+    // creation of new resources
     if (theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.CREATE)) {
+      switch(theRequestDetails.getResourceName()) {
+        // allow creation of new patients and servicerequests
+        case "Coverage":
+        case "Observation":
+        case "Patient":
+        case "ServiceRequest":
+          return new RuleBuilder()
+            .allow("Create Coverage").create().resourcesOfType("Coverage").withAnyId().andThen()
+            .allow("Create Observation").create().resourcesOfType("Observation").withAnyId().andThen()
+            .allow("Create Patient").create().resourcesOfType("Patient").withAnyId().andThen()
+            .allow("Create ServiceRequest").create().resourcesOfType("ServiceRequest").withAnyId().andThen()
+            .build();
+        case "Communication":
+          // read resource
+          final IBaseResource com = theRequestDetails.getResource();
+            if (com == null || !(com instanceof Communication)) {
+              ourLog.warn("Communication is not readable");
+              break;
+            }
+            final Communication myCom = (Communication) com;
+
+            // deny if corresponding serviceRequest is on_hold or completed
+            if(isServiceRequestReadOnly(myCom.getBasedOn())) {
+              return new RuleBuilder()
+                        .denyAll("Corresponding ServiceRequest is read only")
+                        .build();
+            } else {
+              return new RuleBuilder()
+                        .allow("Create Communication").create().resourcesOfType("Communication").withAnyId().andThen()
+                        .build();
+            }
+        case "CommunicationRequest":
+          // read resource
+          final IBaseResource comReq = theRequestDetails.getResource();
+            if (comReq == null || !(comReq instanceof CommunicationRequest)) {
+              ourLog.warn("Communication is not readable");
+              break;
+            }
+            final CommunicationRequest myComReq = (CommunicationRequest) comReq;
+
+            // deny if corresponding serviceRequest is on_hold or completed
+            if(isServiceRequestReadOnly(myComReq.getBasedOn())) {
+              return new RuleBuilder()
+                        .denyAll("Corresponding ServiceRequest is read only")
+                        .build();
+            } else {
+              return new RuleBuilder()
+                        .allow("Create CommunicationRequest").create().resourcesOfType("CommunicationRequest").withAnyId().andThen()
+                        .build();
+            }
+        case "DiagnosticReport":
+          // read resource
+          final IBaseResource dr = theRequestDetails.getResource();
+            if (dr == null || !(dr instanceof DiagnosticReport)) {
+              ourLog.warn("DiagnosticReport is not readable");
+              break;
+            }
+            final DiagnosticReport myDr = (DiagnosticReport) dr;
+
+            // deny if corresponding serviceRequest is on_hold or completed
+            if(isServiceRequestReadOnly(myDr.getBasedOn())) {
+              return new RuleBuilder()
+                        .denyAll("Corresponding ServiceRequest is read only")
+                        .build();
+            } else {
+              return new RuleBuilder()
+                        .allow("Create DiagnosticReport").create().resourcesOfType("DiagnosticReport").withAnyId().andThen()
+                        .build();
+            }
+        case "Media":
+          // read resource
+          final IBaseResource med = theRequestDetails.getResource();
+            if (med == null || !(med instanceof Media)) {
+              ourLog.warn("Media is not readable");
+              break;
+            }
+            final Media myMed = (Media) med;
+
+            // deny if corresponding serviceRequest is on_hold or completed
+            if(isServiceRequestReadOnly(myMed.getBasedOn())) {
+              return new RuleBuilder()
+                        .denyAll("Corresponding ServiceRequest is read only")
+                        .build();
+            } else {
+              return new RuleBuilder()
+                        .allow("Create Media").create().resourcesOfType("Media").withAnyId().andThen()
+                        .build();
+            }
+        default: // deny per default
+          return new RuleBuilder()
+             .denyAll("Deny all")
+             .build();
+      }
+
       return new RuleBuilder()
-        .allow("Create Patient").create().resourcesOfType("Patient").withAnyId().andThen()
-        .allow("Create Communication").create().resourcesOfType("Communication").withAnyId().andThen()
-        .allow("Create ServiceRequest").create().resourcesOfType("ServiceRequest").withAnyId().andThen()
-        .allow("Create CommunicationRequest").create().resourcesOfType("CommunicationRequest").withAnyId().andThen()
-        .allow("Create DiagnosticReport").create().resourcesOfType("DiagnosticReport").withAnyId().andThen()
-        .allow("Create Observation").create().resourcesOfType("Observation").withAnyId().andThen()
-        .allow("Create Media").create().resourcesOfType("Media").withAnyId().andThen()
-        .allow("Create Coverage").create().resourcesOfType("Coverage").withAnyId().andThen()
-        .build();
+              .denyAll("Deny all")
+              .build();
     }
 
     // if the request is a search, allow all as search narrowing has already restricted unauthorized resources
@@ -205,6 +295,31 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
            .denyAll("Deny all")
            .build();
     }
+  }
+
+  // checks if all referenced ServiceRequests are on_hold or completed
+  private boolean isServiceRequestReadOnly(List<Reference> serviceRequests) {
+    IFhirResourceDao<ServiceRequest> srDao = myDaoRegistry.getResourceDao("ServiceRequest");
+
+    for(Reference reference : serviceRequests) {
+      // read ServiceRequest
+      IBaseResource sr = srDao.read((IIdType) reference);
+      if (!(sr instanceof ServiceRequest)) {
+        ourLog.warn("reference is not an ServiceRequest");
+        return true;
+      }
+
+      // check if status is 'on hold' or 'completed'
+      final ServiceRequestStatus status = ((ServiceRequest) sr).getStatus();
+      if (!status.getDisplay().toLowerCase().equals("completed")
+          && !status.getDisplay().toLowerCase().equals("on hold")
+          ) {
+            return false;
+        }
+    }
+
+    // all ServiceRequests are either on_hold or completed
+    return true;
   }
 
   private Set<IIdType> getPatients(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
@@ -370,9 +485,14 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       // check if organization is the sender
       if ( authorizedOrganization.getValue().equals(com.getSender().getReferenceElement().getValue()) ) {
         authorizedCommunicationList.add(new IdType(requestResource));
-        return ruleBuilder.allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
-                          .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
-                          .denyAll("Deny all").build();
+        // check if read only ServiceRequest should be updated
+        if(theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.UPDATE) && isServiceRequestReadOnly(com.getBasedOn())) {
+          return ruleBuilder.denyAll("Corresponding ServiceRequest is read only").build();
+        } else {
+            return ruleBuilder.allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                    .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                    .denyAll("Deny all").build();
+        }
       }
 
       // check if organization is a recipient
@@ -380,9 +500,14 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       for (Reference recipient : recipients) {
         if (recipient != null && authorizedOrganization.getValue().equals(recipient.getReferenceElement().getValue())) {
           authorizedCommunicationList.add(new IdType(requestResource));
-          return ruleBuilder.allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
-                            .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
-                            .denyAll("Deny all").build();
+          // check if read only ServiceRequest should be updated
+          if(theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.UPDATE) && isServiceRequestReadOnly(com.getBasedOn())) {
+            return ruleBuilder.denyAll("Corresponding ServiceRequest is read only").build();
+          } else {
+            return ruleBuilder.allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                      .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                      .denyAll("Deny all").build();
+          }
         }
       }
     }
@@ -394,9 +519,14 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       for (Reference basedOnRef : basedOn) {
         if (basedOnRef != null && authorizedSR.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
           authorizedCommunicationList.add(new IdType(requestResource));
-          return ruleBuilder.allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
-                            .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
-                            .denyAll("Deny all").build();
+          // check if read only ServiceRequest should be updated
+          if(theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.UPDATE) && isServiceRequestReadOnly(com.getBasedOn())) {
+            return ruleBuilder.denyAll("Corresponding ServiceRequest is read only").build();
+          } else {
+            return ruleBuilder.allow("Read Communication").read().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                      .allow("Write Communication").write().allResources().inCompartment("Communication", authorizedCommunicationList).andThen()
+                      .denyAll("Deny all").build();
+          }
         }
       }
     }
@@ -432,9 +562,14 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     }
 
     IAuthRuleBuilder ruleBuilder = new RuleBuilder();
-    return ruleBuilder.allow("Read CommunicationRequest").read().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
-                      .allow("Write CommunicationRequest").write().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
-                      .denyAll("Deny all").build();
+    // check if read only ServiceRequest should be updated
+    if(theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.UPDATE) && isServiceRequestReadOnly(comReq.getBasedOn())) {
+      return ruleBuilder.denyAll("Corresponding ServiceRequest is read only").build();
+    } else {
+      return ruleBuilder.allow("Read CommunicationRequest").read().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
+                .allow("Write CommunicationRequest").write().allResources().inCompartment("CommunicationRequest", authorizedCommunicationRequestList).andThen()
+                .denyAll("Deny all").build();
+    }
   }
 
 
@@ -478,6 +613,16 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
     IAuthRuleBuilder ruleBuilder = new RuleBuilder();
 
+    // check if status is 'on hold' or 'completed'
+    if (theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.UPDATE)) {
+    final ServiceRequestStatus status = ((ServiceRequest) sr).getStatus();
+    if (status.getDisplay().toLowerCase().equals("completed")
+          || status.getDisplay().toLowerCase().equals("on hold")
+          ) {
+        return ruleBuilder.denyAll("ServiceRequest is read only").build();
+      }
+    }
+
     for (IIdType authorizedOrganization : authorizedOrganizationList) {
       // check if organization is the requester
       if ( authorizedOrganization.getValue().equals(sr.getRequester().getReferenceElement().getValue()) ) {
@@ -520,9 +665,14 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       for (Reference basedOnRef : basedOn) {
         if (basedOnRef != null && authorizedSR.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
           authorizedDiagnosticReportList.add(new IdType(requestResource));
-          return ruleBuilder.allow("Read DiagnosticReport").read().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
-            .allow("Write DiagnosticReport").write().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
-            .denyAll("Deny all").build();
+          // check if read only ServiceRequest should be updated
+          if(theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.UPDATE) && isServiceRequestReadOnly(dr.getBasedOn())) {
+            return ruleBuilder.denyAll("Corresponding ServiceRequest is read only").build();
+          } else {
+            return ruleBuilder.allow("Read DiagnosticReport").read().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
+                      .allow("Write DiagnosticReport").write().allResources().inCompartment("DiagnosticReport", authorizedDiagnosticReportList).andThen()
+                      .denyAll("Deny all").build();
+          }
         }
       }
     }
@@ -590,10 +740,15 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
           }
         }
         if (authorizedMediaList.size() > 0) {
-          return ruleBuilder.allow("Read Media").read().allResources().inCompartment("Media", authorizedMediaList).andThen()
-            .allow("Write Media").write().allResources().inCompartment("Media", authorizedMediaList).andThen()
-            .allow("Delete Media").delete().allResources().inCompartment("Media", authorizedDeletableMediaList).andThen()
-            .denyAll("Deny all").build();
+          // check if read only ServiceRequest should be updated
+          if(theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.UPDATE) && isServiceRequestReadOnly(med.getBasedOn())) {
+            return ruleBuilder.denyAll("Corresponding ServiceRequest is read only").build();
+          } else {
+            return ruleBuilder.allow("Read Media").read().allResources().inCompartment("Media", authorizedMediaList).andThen()
+                      .allow("Write Media").write().allResources().inCompartment("Media", authorizedMediaList).andThen()
+                      .allow("Delete Media").delete().allResources().inCompartment("Media", authorizedDeletableMediaList).andThen()
+                      .denyAll("Deny all").build();
+            }
         }
       }
     }
@@ -605,9 +760,14 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
       for (Reference basedOnRef : basedOn) {
         if (basedOnRef != null && authorizedSR.getValue().equals(basedOnRef.getReferenceElement().getValue())) {
           authorizedMediaList.add(new IdType(requestResource));
-          return ruleBuilder.allow("Read Media").read().allResources().inCompartment("Media", authorizedMediaList).andThen()
-            .allow("Write Media").write().allResources().inCompartment("Media", authorizedMediaList).andThen()
-            .denyAll("Deny all").build();
+          // check if read only ServiceRequest should be updated
+          if(theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.UPDATE) && isServiceRequestReadOnly(med.getBasedOn())) {
+            return ruleBuilder.denyAll("Corresponding ServiceRequest is read only").build();
+          } else {
+            return ruleBuilder.allow("Read Media").read().allResources().inCompartment("Media", authorizedMediaList).andThen()
+              .allow("Write Media").write().allResources().inCompartment("Media", authorizedMediaList).andThen()
+              .denyAll("Deny all").build();
+          }
         }
       }
     }
