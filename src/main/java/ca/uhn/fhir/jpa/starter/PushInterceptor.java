@@ -16,7 +16,9 @@ import org.hl7.fhir.r4.model.Communication.CommunicationStatus;
 import org.hl7.fhir.r4.model.CommunicationRequest;
 import org.hl7.fhir.r4.model.CommunicationRequest.CommunicationRequestStatus;
 import org.hl7.fhir.r4.model.ContactPoint;
+import org.hl7.fhir.r4.model.DiagnosticReport;
 import org.hl7.fhir.r4.model.Endpoint;
+import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Endpoint.EndpointStatus;
 import org.hl7.fhir.r4.model.Organization;
 import org.hl7.fhir.r4.model.Reference;
@@ -38,7 +40,7 @@ import javax.annotation.Nullable;
 
 /*
  * %%
- * Copyright (C) 2020 Awesome Technologies Innovationslabor GmbH
+ * Copyright (C) 2020, 2021 Awesome Technologies Innovationslabor GmbH
  * %%
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,8 +57,7 @@ import javax.annotation.Nullable;
  */
 
 /**
- * Server interceptor which creates a push notification for each created or
- * updated ServiceRequest
+ * Server interceptor which creates push notifications
  */
 @Interceptor
 public class PushInterceptor {
@@ -104,12 +105,12 @@ public class PushInterceptor {
     if (myResourceName.startsWith("ServiceRequest")) handleServiceRequests(theRequestDetails, myOperationType);
     else if (myResourceName.startsWith("CommunicationRequest")) handleCommunicationRequests(theRequestDetails, myOperationType);
     else if (myResourceName.startsWith("Communication")) handleCommunication(theRequestDetails, myOperationType);
+    else if (myResourceName.startsWith("DiagnosticReport")) handleDiagnosticReport(theRequestDetails, myOperationType);
   }
 
-  private void handleServiceRequests(ServletRequestDetails theRequestDetails, String theOperationType) {
-    // only push when ServiceRequest is created
-    String myOperationType = theRequestDetails.getRestOperationType().getCode();
-    if (!myOperationType.equals("create")) return;
+  private void handleServiceRequests(ServletRequestDetails theRequestDetails, String myOperationType) {
+    // only push when ServiceRequest is created or updated
+    if (!myOperationType.equals("create") && !myOperationType.equals("update")) return;
 
     final IBaseResource serviceRequest = theRequestDetails.getResource();
     if (serviceRequest == null || !(serviceRequest instanceof ServiceRequest)) {
@@ -118,30 +119,19 @@ public class PushInterceptor {
     }
     final ServiceRequest myServiceRequest = (ServiceRequest) serviceRequest;
 
-    // check if status is active
+    // check if status is 'active', 'on hold' or 'completed'
     final ServiceRequestStatus status = myServiceRequest.getStatus();
-    if (!status.getDisplay().toLowerCase().equals("active")) {
+    if (!status.getDisplay().toLowerCase().equals("active")
+      && !status.getDisplay().toLowerCase().equals("on hold")
+      && !status.getDisplay().toLowerCase().equals("completed")) {
       return;
     }
 
     // read ServiceRequest id
-    final String serviceRequestId = myServiceRequest.getId();
+    String serviceRequestId = myServiceRequest.getId();
     final String requestType = getReferenceType(serviceRequestId);
     if (!requestType.equals("ServiceRequest")) {
       ourLog.warn("Reference is not a ServiceRequest but: " + requestType);
-      return;
-    }
-
-    // read patient id
-    final Reference patient = myServiceRequest.getSubject();
-    if (patient == null) {
-      ourLog.warn("No subject");
-      return;
-    }
-    final String patientId = patient.getReference();
-    final String referenceType = getReferenceType(patientId);
-    if (!referenceType.equals("Patient")) {
-      ourLog.warn("Subject is not a Patient but: " + referenceType);
       return;
     }
 
@@ -149,13 +139,6 @@ public class PushInterceptor {
     final Reference requester = myServiceRequest.getRequester();
     if (requester == null) {
       ourLog.warn("No requester");
-      return;
-    }
-
-    final String senderId = requester.getReference();
-    final String requesterType = getReferenceType(senderId);
-    if (!requesterType.equals("Organization")) {
-      ourLog.warn("Requester is not an Organization but: " + requesterType);
       return;
     }
 
@@ -167,14 +150,91 @@ public class PushInterceptor {
     }
 
     Map<String, Endpoint> endpointMap = new HashMap<>();
+    List<String> pushTokens = new ArrayList<String>();
+    List<String> backgroundPushTokens = new ArrayList<String>();
+    String push_type = null;
 
-    // read endpoints from Organization
-    final List<String> pushTokens = getPushTokens(performer, "push_token", "", endpointMap);
+    if (myOperationType.equals("create")) {
+      // ServiceRequest was created
+      if (status.getDisplay().toLowerCase().equals("active")) {
+        if (myServiceRequest.hasReplaces()) {
+          // ServiceRequest was forwarded -> push to new performer, background push to old performer and requester (CASE_FORWARDED)
+          push_type = "CASE_FORWARDED";
+
+          // push to old performer with old serviceRequestId first
+          // find old performer
+          final Reference oldServiceRequestReference = myServiceRequest.getReplacesFirstRep();
+          IFhirResourceDao<ServiceRequest> serviceRequestDao = myDaoRegistry.getResourceDao("ServiceRequest");
+          ServiceRequest oldServiceRequest = serviceRequestDao.read(new IdType(oldServiceRequestReference.toString()));
+          final Reference oldPerformer = oldServiceRequest.getPerformerFirstRep();
+          backgroundPushTokens.addAll(getPushTokens(oldPerformer, "push_token", "", endpointMap));
+
+          // send pushes to old performer
+          List<String> rejectedTokens = new ArrayList<String>();
+          if (!backgroundPushTokens.isEmpty()) {
+            rejectedTokens.addAll(sendPushNotification(backgroundPushTokens, myOperationType, oldServiceRequest.getId(), myAppIdNormal, true, push_type));
+          }
+
+          if (!rejectedTokens.isEmpty()) {
+            removePushTokens(rejectedTokens, endpointMap, "push_token");
+          }
+          backgroundPushTokens = new ArrayList<String>();
+
+          // push to new performer and background push to requester
+          pushTokens.addAll(getPushTokens(performer, "push_token", "", endpointMap));
+          backgroundPushTokens.addAll(getPushTokens(requester, "push_token", "", endpointMap));
+        }
+      }
+    } else {
+      // ServiceRequest was updated
+      if (!status.getDisplay().toLowerCase().equals("active")
+          && !status.getDisplay().toLowerCase().equals("on hold")
+          && !status.getDisplay().toLowerCase().equals("completed")) {
+        return;
+      }
+
+      // lookup the sender of the request
+      final String authHeader = theRequestDetails.getHeader("Authorization");
+      final BearerToken bearerToken = new BearerToken(authHeader);
+      // get list of organizations
+      final List<IdType> myOrgIds = bearerToken.getAuthorizedOrganizations();
+
+      // user requests or accepts to close the case -> push to sender of the request, background push to receiver of the request (CLOSE_CASE_REQUEST, CLOSE_CASE_CONFIRMED)
+      if (myOrgIds.contains(new IdType(requester.toString()))) {
+           // requester sent this request
+           pushTokens.addAll(getPushTokens(performer, "push_token", "", endpointMap));
+           backgroundPushTokens.addAll(getPushTokens(requester, "push_token", "", endpointMap));
+      }
+
+      if (myOrgIds.contains(new IdType(performer.toString()))) {
+           // performer sent this request
+           pushTokens.addAll(getPushTokens(requester, "push_token", "", endpointMap));
+           backgroundPushTokens.addAll(getPushTokens(performer, "push_token", "", endpointMap));
+      }
+
+      if (status.getDisplay().toLowerCase().equals("active")) {
+          push_type = "CLOSE_CASE_DECLINED";
+        }
+
+      if (status.getDisplay().toLowerCase().equals("on hold")) {
+        push_type = "CLOSE_CASE_REQUEST";
+      }
+
+      if (status.getDisplay().toLowerCase().equals("completed")) {
+        push_type = "CLOSE_CASE_CONFIRMED";
+      }
+    }
 
     // send push notification to endpoints
-    final List<String> rejectedTokens = sendPushNotification(pushTokens, theOperationType, senderId, patientId, serviceRequestId, myAppIdNormal, false);
+    List<String> rejectedTokens = new ArrayList<String>();
+    if (!pushTokens.isEmpty()) {
+      rejectedTokens.addAll(sendPushNotification(pushTokens, myOperationType, serviceRequestId, myAppIdNormal, false, push_type));
+    }
+    if (!backgroundPushTokens.isEmpty()) {
+      rejectedTokens.addAll(sendPushNotification(backgroundPushTokens, myOperationType, serviceRequestId, myAppIdNormal, true, push_type));
+    }
 
-    if (rejectedTokens != null) {
+    if (!rejectedTokens.isEmpty()) {
       removePushTokens(rejectedTokens, endpointMap, "push_token");
     }
   }
@@ -198,31 +258,11 @@ public class PushInterceptor {
       return;
     }
 
-    // check if status is 'completed' or 'aborted'
+    // check if status is 'completed' or 'in progress'
     final CommunicationStatus status = myCommunication.getStatus();
     if (!status.getDisplay().toLowerCase().equals("completed")
       && !status.getDisplay().toLowerCase().equals("in progress")
-      && !status.getDisplay().toLowerCase().equals("not done")
-      && !status.getDisplay().toLowerCase().equals("aborted")
       ) {
-      return;
-    }
-
-    // check if Communication is already read
-    if (myCommunication.hasReceived()) {
-      return;
-    }
-
-    // read patient id
-    final Reference patient = myCommunication.getSubject();
-    if (patient == null) {
-      ourLog.warn("No subject");
-      return;
-    }
-    final String patientId = patient.getReference();
-    final String patientType = getReferenceType(patientId);
-    if (!patientType.equals("Patient")) {
-      ourLog.warn("Subject is not a Patient but: " + patientType);
       return;
     }
 
@@ -231,12 +271,6 @@ public class PushInterceptor {
     if (sender == null) {
         ourLog.warn("No sender");
         return;
-    }
-    final String senderId = sender.getReference();
-    final String senderType = getReferenceType(senderId);
-    if (!senderType.equals("Organization")) {
-      ourLog.warn("Sender is not an Organization but: " + senderType);
-      return;
     }
 
     // find recipient organization
@@ -247,27 +281,52 @@ public class PushInterceptor {
     }
 
     String app_id = myAppIdNormal;
-    Boolean backgroundPush = false;
+    String push_type = null;
     List<String> pushTokens = new ArrayList<String>();
-
-    // check if topic is PHONE-CONSULT
+    List<String> backgroundPushTokens = new ArrayList<String>();
     Map<String, Endpoint> endpointMap = new HashMap<>();
-    if (myCommunication.hasTopic()) {
-      final CodeableConcept topic = myCommunication.getTopic();
-      if (!topic.getText().toLowerCase().equals("phone-consult")) {
-        return;
-      }
-      backgroundPush = true;
-      pushTokens.addAll(getPushTokenFromPayload(myCommunication.getPayloadFirstRep().getContentStringType().toString(), recipient ,false, endpointMap));
+
+    // check if status is 'completed'
+    if (status.getDisplay().toLowerCase().equals("completed")) {
+        // check if topic is PHONE-CONSULT
+        if (myCommunication.hasTopic()) {
+          final CodeableConcept topic = myCommunication.getTopic();
+          if (!topic.getText().toLowerCase().equals("phone-consult")) {
+            return;
+          }
+          // pending call has ended -> background push to sender and recipient (CALL_ENDED)
+          backgroundPushTokens.addAll(getPushTokenFromPayload(myCommunication.getPayloadFirstRep().getContentStringType().toString(), sender ,true, endpointMap));
+          backgroundPushTokens.addAll(getPushTokenFromPayload(myCommunication.getPayloadFirstRep().getContentStringType().toString(), recipient ,false, endpointMap));
+
+          push_type = "CALL_ENDED";
+        } else {
+          // check if Communication is already read / has 'received' date set
+          if (myCommunication.hasReceived()) {
+        	// user has read a message -> background push to sender and recipient (CASE_COMMUNICATION_READ)
+            backgroundPushTokens.addAll(getPushTokens(sender, "push_token", "", endpointMap));
+            backgroundPushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
+            push_type = "CASE_COMMUNICATION_READ";
+          }
+        }
     } else {
-      if (status.getDisplay().toLowerCase().equals("completed")) return; // do not push on completed
-      pushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
+      // status is 'in progress'
+        // a new Communication was sent -> push to recipient, background push to sender (CASE_REQUEST_NEW)
+        pushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
+        // background push to senders
+        backgroundPushTokens.addAll(getPushTokens(sender, "push_token", "", endpointMap));
+        push_type = "CASE_REQUEST_NEW";
     }
 
     // send a push notification via Sygnal to APNS
-    List<String> rejectedTokens = sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationId, app_id, backgroundPush);
+    List<String> rejectedTokens = new ArrayList<String>();
+    if (!pushTokens.isEmpty()) {
+      rejectedTokens.addAll(sendPushNotification(pushTokens, myOperationType, communicationId, app_id, false, push_type));
+    }
+    if (!backgroundPushTokens.isEmpty()) {
+      rejectedTokens.addAll(sendPushNotification(pushTokens, myOperationType, communicationId, app_id, true, push_type));
+    }
 
-    if (rejectedTokens != null) {
+    if (!rejectedTokens.isEmpty()) {
       removePushTokens(rejectedTokens, endpointMap, "push_token");
     }
   }
@@ -288,25 +347,12 @@ public class PushInterceptor {
       return;
     }
 
-    // check if status is active
+    // check if status is active, revoked or completed
     final CommunicationRequestStatus myStatus = myCommunicationRequest.getStatus();
     String status = myStatus.getDisplay().toLowerCase();
     if (!status.equals("active")
       && !status.equals("revoked")
       && !status.equals("completed")) {
-      return;
-    }
-
-    // read patient id
-    final Reference patient = myCommunicationRequest.getSubject();
-    if (patient == null) {
-      ourLog.warn("No subject");
-      return;
-    }
-    final String patientId = patient.getReference();
-    final String patientType = getReferenceType(patientId);
-    if (!patientType.equals("Patient")) {
-      ourLog.warn("Subject is not a Patient but: " + patientType);
       return;
     }
 
@@ -316,23 +362,11 @@ public class PushInterceptor {
         ourLog.warn("No sender");
         return;
     }
-    final String senderId = sender.getReference();
-    final String senderType = getReferenceType(senderId);
-    if (!senderType.equals("Organization")) {
-      ourLog.warn("Sender is not an Organization but: " + senderType);
-      return;
-    }
 
     // find recipient organization
     final Reference recipient = myCommunicationRequest.getRecipientFirstRep();
     if (recipient == null) {
       ourLog.warn("No recipient set");
-      return;
-    }
-    final String recipientId = recipient.getReference();
-    final String recipientType = getReferenceType(senderId);
-    if (!recipientType.equals("Organization")) {
-      ourLog.warn("Recipient is not an Organization but: " + recipientType);
       return;
     }
 
@@ -342,34 +376,121 @@ public class PushInterceptor {
 
     Map<String, Endpoint> endpointMap = new HashMap<>();
     String token_type;
+    String push_type = null;
 
     if (myOperationType.equals("create")) {
-      // for newly created CommunicationRequests send a voip push
+      // for newly created CommunicationRequests send a voip push (CALL_REQUEST)
       app_id = myAppIdVoip;
       backgroundPush = false;
       // read endpoints from Organization
       token_type = "voip_token";
       pushTokens = getPushTokens(recipient, token_type, "", endpointMap);
+      push_type = "CALL_REQUEST";
     } else {
-      // CommunicationRequest updated -> background push to recipients
+      // user ended call early -> background push to recipients (CALL_ENDED)
       token_type = "push_token";
       pushTokens = getPushTokens(recipient, token_type, "", endpointMap);
+      push_type = "CALL_ENDED";
       if (status.equals("completed")) {
+      // user accepted the call -> background push to sender and all other recipients (CALL_ACCEPTED)
         pushTokens.addAll(getPushTokenFromPayload(myCommunicationRequest.getPayloadFirstRep().getContentStringType().toString(), sender, true, endpointMap));
         // remove the pushToken of the device that just accepted the call to avoid that it hangs up immediately
         List<String> callRecipients = getPushTokenFromPayload(myCommunicationRequest.getPayloadFirstRep().getContentStringType().toString(), recipient, false, endpointMap);
         for (String callRecipient : callRecipients) {
           pushTokens.remove(callRecipient);
         }
+        push_type = "CALL_ACCEPTED";
       }
     }
 
     // send a push notification via Sygnal to APNS
-    List<String> rejectedTokens = sendPushNotification(pushTokens, myOperationType, senderId, patientId, communicationRequestId, app_id, backgroundPush);
+    List<String> rejectedTokens = sendPushNotification(pushTokens, myOperationType, communicationRequestId, app_id, backgroundPush, push_type);
 
     if (rejectedTokens != null) {
       removePushTokens(rejectedTokens, endpointMap, token_type);
     }
+  }
+
+  private void handleDiagnosticReport(ServletRequestDetails theRequestDetails, String myOperationType) {
+    // only push when DiagnosticReport is created or updated
+    if (!myOperationType.equals("create") && !myOperationType.equals("update")) return;
+
+    final IBaseResource diagnosticReport = theRequestDetails.getResource();
+      if (diagnosticReport == null || !(diagnosticReport instanceof DiagnosticReport)) {
+        ourLog.warn("DiagnosticReport is not readable");
+        return;
+      }
+      final DiagnosticReport myDiagnosticReport = (DiagnosticReport) diagnosticReport;
+
+      // read Communication id
+      final String diagnosticReportId = myDiagnosticReport.getId();
+      final String requestType = getReferenceType(diagnosticReportId);
+      if (!requestType.equals("DiagnosticReport")) {
+        ourLog.warn("Reference is not a DiagnosticReport but: " + requestType);
+        return;
+      }
+
+      // find performer organization
+      final Reference performer = myDiagnosticReport.getPerformerFirstRep();
+      if (performer == null) {
+        ourLog.warn("No performer set");
+        return;
+      }
+
+      // find recipient organization
+      final Reference serviceRequestReference = myDiagnosticReport.getBasedOnFirstRep();
+      IFhirResourceDao<ServiceRequest> serviceRequestDao = myDaoRegistry.getResourceDao("ServiceRequest");
+      ServiceRequest serviceRequest = serviceRequestDao.read(new IdType(serviceRequestReference.toString()));
+
+      final Reference srPerformer = serviceRequest.getPerformerFirstRep();
+      if (srPerformer == null) {
+          ourLog.warn("No performer");
+          return;
+      }
+      final Reference srRequester = serviceRequest.getRequester();
+      if (srRequester == null) {
+          ourLog.warn("No requester");
+          return;
+      }
+
+      Reference recipient;
+      if(srPerformer.equals(performer)) {
+        recipient = srRequester;
+      } else {
+        recipient = srPerformer;
+
+      }
+
+      String app_id = myAppIdNormal;
+      List<String> pushTokens = new ArrayList<String>();
+      List<String> backgroundPushTokens = new ArrayList<String>();
+      Map<String, Endpoint> endpointMap = new HashMap<>();
+      String push_type = null;
+
+      if (myOperationType.equals("create")) {
+        // DiagnosticReport was created -> push to recipient, background push to sender (CASE_CONSULTATION_REPORT_NEW)
+        pushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
+        backgroundPushTokens.addAll(getPushTokens(performer, "push_token", "", endpointMap));
+        push_type = "CASE_CONSULTATION_REPORT_NEW";
+      } else {
+        // DiagnosticReport was accepted -> push to sender, background push to recipient (CASE_CONSULTATION_REPORT_CONFIRMED)
+        pushTokens.addAll(getPushTokens(performer, "push_token", "", endpointMap));
+        backgroundPushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
+        push_type = "CASE_CONSULTATION_REPORT_CONFIRMED";
+      }
+
+      // send a push notification via Sygnal to APNS
+      List<String> rejectedTokens = new ArrayList<String>();
+      if (!pushTokens.isEmpty()) {
+        rejectedTokens.addAll(sendPushNotification(pushTokens, myOperationType, diagnosticReportId, app_id, false, push_type));
+      }
+      if (!backgroundPushTokens.isEmpty()) {
+        rejectedTokens.addAll(sendPushNotification(pushTokens, myOperationType, diagnosticReportId, app_id, true, push_type));
+      }
+
+      if (!rejectedTokens.isEmpty()) {
+        removePushTokens(rejectedTokens, endpointMap, "push_token");
+      }
   }
 
   private String getReferenceType(String reference) {
@@ -492,8 +613,13 @@ public class PushInterceptor {
 
   // send a push notification via Sygnal to APNS, returning a list of rejected tokens or null.
   @Nullable
-  private List<String> sendPushNotification(List<String> pushTokens, String type, String senderId, String patientId, String requestId, String appId, Boolean background) {
+  private List<String> sendPushNotification(List<String> pushTokens, String type, String requestId, String appId, Boolean background, String push_type) {
     List<String> rejectedTokens = null;
+
+    if(push_type != null) {
+      ourLog.warn("Missing push_type");
+      return null;
+    }
 
     try {
       URL url = new URL(myPushUrl);
@@ -513,12 +639,11 @@ public class PushInterceptor {
       }
 
       JSONObject notification = new JSONObject();
-      notification.put("sender", senderId);
       notification.put("type", type);
       notification.put("request", requestId);
-      notification.put("patient", patientId);
       notification.put("devices", devicelist);
       notification.put("background", background);
+      notification.put("push_type", push_type);
 
       JSONObject content = new JSONObject();
       content.put("notification", notification);
