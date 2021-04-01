@@ -615,10 +615,8 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
     // check if status is 'on hold' or 'completed'
     if (theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.UPDATE)) {
-    final ServiceRequestStatus status = ((ServiceRequest) sr).getStatus();
-    if (status.getDisplay().toLowerCase().equals("completed")
-          || status.getDisplay().toLowerCase().equals("on hold")
-          ) {
+      final ServiceRequestStatus status = ((ServiceRequest) sr).getStatus();
+      if (status.getDisplay().toLowerCase().equals("completed")) {
         return ruleBuilder.denyAll("ServiceRequest is read only").build();
       }
     }
