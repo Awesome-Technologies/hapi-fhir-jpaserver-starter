@@ -303,7 +303,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
     for(Reference reference : serviceRequests) {
       // read ServiceRequest
-      IBaseResource sr = srDao.read((IIdType) reference);
+      IBaseResource sr = srDao.read(new IdType(reference.getReference()));
       if (!(sr instanceof ServiceRequest)) {
         ourLog.warn("reference is not an ServiceRequest");
         return true;
