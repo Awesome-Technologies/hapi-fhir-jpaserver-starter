@@ -121,6 +121,7 @@ public class PushInterceptor {
 
     // check if status is 'active', 'on hold' or 'completed'
     final ServiceRequestStatus status = myServiceRequest.getStatus();
+
     if (!status.getDisplay().toLowerCase().equals("active")
       && !status.getDisplay().toLowerCase().equals("on hold")
       && !status.getDisplay().toLowerCase().equals("completed")) {
@@ -165,7 +166,7 @@ public class PushInterceptor {
           // find old performer
           final Reference oldServiceRequestReference = myServiceRequest.getReplacesFirstRep();
           IFhirResourceDao<ServiceRequest> serviceRequestDao = myDaoRegistry.getResourceDao("ServiceRequest");
-          ServiceRequest oldServiceRequest = serviceRequestDao.read(new IdType(oldServiceRequestReference.toString()));
+          ServiceRequest oldServiceRequest = serviceRequestDao.read(new IdType(oldServiceRequestReference.getReference()));
           final Reference oldPerformer = oldServiceRequest.getPerformerFirstRep();
           backgroundPushTokens.addAll(getPushTokens(oldPerformer, "push_token", "", endpointMap));
 
@@ -200,21 +201,22 @@ public class PushInterceptor {
       final List<IdType> myOrgIds = bearerToken.getAuthorizedOrganizations();
 
       // user requests or accepts to close the case -> push to sender of the request, background push to receiver of the request (CLOSE_CASE_REQUEST, CLOSE_CASE_CONFIRMED)
-      if (myOrgIds.contains(new IdType(requester.toString()))) {
+      if (myOrgIds.contains(new IdType(requester.getReference()))) {
            // requester sent this request
            pushTokens.addAll(getPushTokens(performer, "push_token", "", endpointMap));
            backgroundPushTokens.addAll(getPushTokens(requester, "push_token", "", endpointMap));
       }
 
-      if (myOrgIds.contains(new IdType(performer.toString()))) {
+      if (myOrgIds.contains(new IdType(performer.getReference()))) {
            // performer sent this request
            pushTokens.addAll(getPushTokens(requester, "push_token", "", endpointMap));
            backgroundPushTokens.addAll(getPushTokens(performer, "push_token", "", endpointMap));
       }
 
       if (status.getDisplay().toLowerCase().equals("active")) {
-          push_type = "CLOSE_CASE_DECLINED";
-        }
+        push_type = "CLOSE_CASE_DECLINED";
+        //TODO nur background pushes an alle
+      }
 
       if (status.getDisplay().toLowerCase().equals("on hold")) {
         push_type = "CLOSE_CASE_REQUEST";
@@ -323,7 +325,7 @@ public class PushInterceptor {
       rejectedTokens.addAll(sendPushNotification(pushTokens, myOperationType, communicationId, app_id, false, push_type));
     }
     if (!backgroundPushTokens.isEmpty()) {
-      rejectedTokens.addAll(sendPushNotification(pushTokens, myOperationType, communicationId, app_id, true, push_type));
+      rejectedTokens.addAll(sendPushNotification(backgroundPushTokens, myOperationType, communicationId, app_id, true, push_type));
     }
 
     if (!rejectedTokens.isEmpty()) {
@@ -485,7 +487,7 @@ public class PushInterceptor {
         rejectedTokens.addAll(sendPushNotification(pushTokens, myOperationType, diagnosticReportId, app_id, false, push_type));
       }
       if (!backgroundPushTokens.isEmpty()) {
-        rejectedTokens.addAll(sendPushNotification(pushTokens, myOperationType, diagnosticReportId, app_id, true, push_type));
+        rejectedTokens.addAll(sendPushNotification(backgroundPushTokens, myOperationType, diagnosticReportId, app_id, true, push_type));
       }
 
       if (!rejectedTokens.isEmpty()) {
@@ -614,11 +616,11 @@ public class PushInterceptor {
   // send a push notification via Sygnal to APNS, returning a list of rejected tokens or null.
   @Nullable
   private List<String> sendPushNotification(List<String> pushTokens, String type, String requestId, String appId, Boolean background, String push_type) {
-    List<String> rejectedTokens = null;
+    List<String> rejectedTokens = new ArrayList<String>();
 
-    if(push_type != null) {
+    if(null == push_type) {
       ourLog.warn("Missing push_type");
-      return null;
+      return rejectedTokens;
     }
 
     try {
