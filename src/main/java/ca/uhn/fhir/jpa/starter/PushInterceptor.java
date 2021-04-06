@@ -138,15 +138,17 @@ public class PushInterceptor {
 
     // find requester organization
     final Reference requester = myServiceRequest.getRequester();
-    if (requester == null) {
-      ourLog.warn("No requester");
+    final String requesterType = getReferenceType(requester.getReference());
+    if (!requesterType.equals("Organization")) {
+      ourLog.warn("Requester is empty or not an Organization but: " + requesterType);
       return;
     }
 
-    // find recipient organization
+    // find performer organization
     final Reference performer = myServiceRequest.getPerformerFirstRep();
-    if (performer == null) {
-      ourLog.warn("No performer set");
+    final String performerType = getReferenceType(performer.getReference());
+    if (!performerType.equals("Organization")) {
+      ourLog.warn("Performer is empty or not an Organization but: " + performerType);
       return;
     }
 
@@ -272,15 +274,17 @@ public class PushInterceptor {
 
     // find sender organization
     final Reference sender = myCommunication.getSender();
-    if (sender == null) {
-        ourLog.warn("No sender");
-        return;
+    final String senderType = getReferenceType(sender.getReference());
+    if (!senderType.equals("Organization")) {
+      ourLog.warn("Sender is empty or not an Organization but: " + senderType);
+      return;
     }
 
     // find recipient organization
     final Reference recipient = myCommunication.getRecipientFirstRep();
-    if (recipient == null) {
-      ourLog.warn("No recipient set");
+    final String recipientType = getReferenceType(recipient.getReference());
+    if (!recipientType.equals("Organization")) {
+      ourLog.warn("Recipient is empty or not an Organization but: " + recipientType);
       return;
     }
 
@@ -362,15 +366,17 @@ public class PushInterceptor {
 
     // find requester organization
     final Reference sender = myCommunicationRequest.getSender();
-    if (sender == null) {
-        ourLog.warn("No sender");
-        return;
+    final String senderType = getReferenceType(sender.getReference());
+    if (!senderType.equals("Organization")) {
+      ourLog.warn("Sender is empty or not an Organization but: " + senderType);
+      return;
     }
 
     // find recipient organization
     final Reference recipient = myCommunicationRequest.getRecipientFirstRep();
-    if (recipient == null) {
-      ourLog.warn("No recipient set");
+    final String recipientType = getReferenceType(recipient.getReference());
+    if (!recipientType.equals("Organization")) {
+      ourLog.warn("Recipient is empty or not an Organization but: " + recipientType);
       return;
     }
 
@@ -440,14 +446,17 @@ public class PushInterceptor {
       ServiceRequest serviceRequest = serviceRequestDao.read(new IdType(serviceRequestReference.getReference()));
 
       final Reference srPerformer = serviceRequest.getPerformerFirstRep();
-      if (srPerformer == null) {
-          ourLog.warn("No performer");
-          return;
+      final String performerType = getReferenceType(srPerformer.getReference());
+      if (!performerType.equals("Organization")) {
+        ourLog.warn("Performer is empty or not an Organization but: " + performerType);
+        return;
       }
+
       final Reference srRequester = serviceRequest.getRequester();
-      if (srRequester == null) {
-          ourLog.warn("No requester");
-          return;
+      final String requesterType = getReferenceType(srRequester.getReference());
+      if (!requesterType.equals("Organization")) {
+        ourLog.warn("Requester is empty or not an Organization but: " + requesterType);
+        return;
       }
 
       String app_id = myAppIdNormal;
