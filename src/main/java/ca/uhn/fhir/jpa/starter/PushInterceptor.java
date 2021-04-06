@@ -215,7 +215,9 @@ public class PushInterceptor {
 
       if (status.getDisplay().toLowerCase().equals("active")) {
         push_type = "CLOSE_CASE_DECLINED";
-        //TODO nur background pushes an alle
+        // send background pushes to everyone
+        backgroundPushTokens.addAll(pushTokens);
+        pushTokens.clear();
       }
 
       if (status.getDisplay().toLowerCase().equals("on hold")) {
