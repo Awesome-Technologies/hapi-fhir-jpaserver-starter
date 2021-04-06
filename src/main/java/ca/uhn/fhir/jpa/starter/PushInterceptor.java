@@ -434,17 +434,10 @@ public class PushInterceptor {
         return;
       }
 
-      // find performer organization
-      final Reference performer = myDiagnosticReport.getPerformerFirstRep();
-      if (performer == null) {
-        ourLog.warn("No performer set");
-        return;
-      }
-
-      // find recipient organization
+      // find organizations from ServiceRequest
       final Reference serviceRequestReference = myDiagnosticReport.getBasedOnFirstRep();
       IFhirResourceDao<ServiceRequest> serviceRequestDao = myDaoRegistry.getResourceDao("ServiceRequest");
-      ServiceRequest serviceRequest = serviceRequestDao.read(new IdType(serviceRequestReference.toString()));
+      ServiceRequest serviceRequest = serviceRequestDao.read(new IdType(serviceRequestReference.getReference()));
 
       final Reference srPerformer = serviceRequest.getPerformerFirstRep();
       if (srPerformer == null) {
@@ -457,14 +450,6 @@ public class PushInterceptor {
           return;
       }
 
-      Reference recipient;
-      if(srPerformer.equals(performer)) {
-        recipient = srRequester;
-      } else {
-        recipient = srPerformer;
-
-      }
-
       String app_id = myAppIdNormal;
       List<String> pushTokens = new ArrayList<String>();
       List<String> backgroundPushTokens = new ArrayList<String>();
@@ -473,13 +458,13 @@ public class PushInterceptor {
 
       if (myOperationType.equals("create")) {
         // DiagnosticReport was created -> push to recipient, background push to sender (CASE_CONSULTATION_REPORT_NEW)
-        pushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
-        backgroundPushTokens.addAll(getPushTokens(performer, "push_token", "", endpointMap));
+        pushTokens.addAll(getPushTokens(srRequester, "push_token", "", endpointMap));
+        backgroundPushTokens.addAll(getPushTokens(srPerformer, "push_token", "", endpointMap));
         push_type = "CASE_CONSULTATION_REPORT_NEW";
       } else {
         // DiagnosticReport was accepted -> push to sender, background push to recipient (CASE_CONSULTATION_REPORT_CONFIRMED)
-        pushTokens.addAll(getPushTokens(performer, "push_token", "", endpointMap));
-        backgroundPushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
+        pushTokens.addAll(getPushTokens(srPerformer, "push_token", "", endpointMap));
+        backgroundPushTokens.addAll(getPushTokens(srRequester, "push_token", "", endpointMap));
         push_type = "CASE_CONSULTATION_REPORT_CONFIRMED";
       }
 
