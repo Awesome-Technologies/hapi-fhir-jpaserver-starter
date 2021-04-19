@@ -4,7 +4,7 @@ package ca.uhn.fhir.jpa.starter;
  * #%L
  * HAPI FHIR JPA Server
  * %%
- * Copyright (C) 2020 Awesome Technologies Innovationslabor GmbH
+ * Copyright (C) 2020, 2021 Awesome Technologies Innovationslabor GmbH
  * %%
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,9 +30,13 @@ import ca.uhn.fhir.rest.server.RestfulServer;
 import ca.uhn.fhir.util.CoverageIgnore;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.CapabilityStatement;
+import org.hl7.fhir.r4.model.CapabilityStatement.CapabilityStatementRestSecurityComponent;
+import org.hl7.fhir.r4.model.CodeableConcept;
+import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.Extension;
 import org.hl7.fhir.r4.model.IntegerType;
 import org.hl7.fhir.r4.model.Meta;
+import org.hl7.fhir.r4.model.UriType;
 
 import javax.annotation.Nonnull;
 import javax.servlet.http.HttpServletRequest;
@@ -55,10 +59,34 @@ public class JpaConformanceProviderAMP extends JpaConformanceProviderR4 {
   @Override
   public CapabilityStatement getServerConformance(HttpServletRequest theRequest, RequestDetails theRequestDetails) {
     CapabilityStatement retVal = myCachedValue;
+    retVal = super.getServerConformance(theRequest, theRequestDetails);
+
+    // Security options
+    CapabilityStatementRestSecurityComponent retValSec = retVal.getRestFirstRep().getSecurity();
+    retValSec.setCors(true);
+    retValSec.addService(
+      new CodeableConcept(
+        new Coding(
+          "http://hl7.org/fhir/restful-security-service",
+                    "SMART-on-FHIR",
+                    "SMART-on-FHIR"
+            )
+        )
+      );
+
+    String oauthBaseUrl = HapiProperties.getAmpAuthUrl();
+    Extension oauthUris = new Extension("http://fhir-registry.smarthealthit.org/StructureDefinition/oauth-uris");
+    oauthUris.addExtension(new Extension("authorize", new UriType(oauthBaseUrl + "/protocol/openid-connect/auth")));
+    oauthUris.addExtension(new Extension("token", new UriType(oauthBaseUrl + "/protocol/openid-connect/token")));
+    oauthUris.addExtension(new Extension("introspect", new UriType(oauthBaseUrl + "/protocol/openid-connect/token/introspect")));
+    retValSec.addExtension(oauthUris);
+
+    retVal.getRestFirstRep().setSecurity(retValSec);
+
+    // AMP model versions
     Integer modelVersion = HapiProperties.getAmpModelVersion();
     Integer pushVersion = HapiProperties.getAmpPushModelVersion();
 
-    retVal = super.getServerConformance(theRequest, theRequestDetails);
     retVal.addExtension(new Extension("institute.amp.model-version", new IntegerType(modelVersion)));
     retVal.addExtension(new Extension("clinic.amp.model-version", new IntegerType(modelVersion)));
     retVal.addExtension(new Extension("clinic.amp.push-version", new IntegerType(pushVersion)));
