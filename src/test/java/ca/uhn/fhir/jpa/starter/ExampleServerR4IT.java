@@ -4,6 +4,9 @@ import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.rest.api.CacheControlDirective;
 import ca.uhn.fhir.rest.api.EncodingEnum;
 import ca.uhn.fhir.rest.api.MethodOutcome;
+import ca.uhn.fhir.rest.client.api.IGenericClient;
+import ca.uhn.fhir.rest.client.api.ServerValidationModeEnum;
+import ca.uhn.fhir.rest.client.interceptor.LoggingInterceptor;
 import ca.uhn.fhir.util.BundleUtil;
 import org.eclipse.jetty.websocket.api.Session;
 import org.eclipse.jetty.websocket.client.ClientUpgradeRequest;
@@ -12,144 +15,168 @@ import org.hl7.fhir.instance.model.api.IIdType;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Observation;
 import org.hl7.fhir.r4.model.Patient;
-import org.hl7.fhir.r4.model.Person;
-import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.Subscription;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.web.server.LocalServerPort;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.net.URI;
-import java.util.*;
+import java.util.List;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static ca.uhn.fhir.util.TestUtil.waitForSize;
+import static java.lang.Thread.sleep;
+import static java.util.Comparator.comparing;
 import static org.awaitility.Awaitility.await;
+import static org.awaitility.Awaitility.pollInSameThread;
+import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+@ExtendWith(SpringExtension.class)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, classes = Application.class, properties =
+	{
+		"spring.batch.job.enabled=false",
+		"spring.datasource.url=jdbc:h2:mem:dbr4",
+		"hapi.fhir.enable_repository_validating_interceptor=true",
+		"hapi.fhir.fhir_version=r4",
+		"hapi.fhir.subscription.websocket_enabled=true",
+		"hapi.fhir.mdm_enabled=true",
+		//Override is currently required when using MDM as the construction of the MDM beans are ambiguous as they are constructed multiple places. This is evident when running in a spring boot environment
+		"spring.main.allow-bean-definition-overriding=true"
+	})
 public class ExampleServerR4IT {
+	private static final org.slf4j.Logger ourLog = org.slf4j.LoggerFactory.getLogger(ExampleServerR4IT.class);
+	private IGenericClient ourClient;
+	private FhirContext ourCtx;
 
-    static {
-        HapiProperties.forceReload();
-        HapiProperties.setProperty(HapiProperties.DATASOURCE_URL, "jdbc:h2:mem:dbr4");
-        HapiProperties.setProperty(HapiProperties.FHIR_VERSION, "R4");
-        HapiProperties.setProperty(HapiProperties.SUBSCRIPTION_WEBSOCKET_ENABLED, "true");
-        HapiProperties.setProperty(HapiProperties.EMPI_ENABLED, "true");
-        TestSetup.ourCtx = FhirContext.forR4();
-    }
+	@LocalServerPort
+	private int port;
 
-    @Test
-    public void testCreateAndRead() {
-        TestSetup.ourLog.info("Base URL is: " + HapiProperties.getServerAddress());
-        String methodName = "testCreateResourceConditional";
 
-        Patient pt = new Patient();
-        pt.setActive(true);
-        pt.getBirthDateElement().setValueAsString("2020-01-01");
-        pt.addIdentifier().setSystem("http://foo").setValue("12345");
-        pt.addName().setFamily(methodName);
-        IIdType id = TestSetup.ourClient.create().resource(pt).execute().getId();
+	@Test
+	@Order(0)
+	void testCreateAndRead() {
+		String methodName = "testCreateAndRead";
+		ourLog.info("Entering " + methodName + "()...");
 
-        Patient pt2 = TestSetup.ourClient.read().resource(Patient.class).withId(id).execute();
-        assertEquals(methodName, pt2.getName().get(0).getFamily());
+		Patient pt = new Patient();
+		pt.setActive(true);
+		pt.getBirthDateElement().setValueAsString("2020-01-01");
+		pt.addIdentifier().setSystem("http://foo").setValue("12345");
+		pt.addName().setFamily(methodName);
+		IIdType id = ourClient.create().resource(pt).execute().getId();
 
-        // Test EMPI
+		Patient pt2 = ourClient.read().resource(Patient.class).withId(id).execute();
+		assertEquals(methodName, pt2.getName().get(0).getFamily());
 
-        // Wait until the EMPI message has been processed
-        await().until(() -> getPeople().size() > 0);
-        List<Person> persons = getPeople();
 
-        // Verify a Person was created that links to our Patient
-        Optional<String> personLinkToCreatedPatient = persons.stream()
-          .map(Person::getLink)
-          .flatMap(Collection::stream)
-          .map(Person.PersonLinkComponent::getTarget)
-          .map(Reference::getReference)
-          .filter(pid -> id.toUnqualifiedVersionless().getValue().equals(pid))
-          .findAny();
-        assertTrue(personLinkToCreatedPatient.isPresent());
-    }
+		// Wait until the MDM message has been processed
+		await().until(() -> {
+			sleep(1000);
+			return getGoldenResourcePatient() != null;
+		});
+		Patient goldenRecord = getGoldenResourcePatient();
 
-  private List<Person> getPeople() {
-    Bundle bundle = TestSetup.ourClient.search().forResource(Person.class).cacheControl(new CacheControlDirective().setNoCache(true)).returnBundle(Bundle.class).execute();
-    return BundleUtil.toListOfResourcesOfType(TestSetup.ourCtx, bundle, Person.class);
-  }
+		// Verify that a golden record Patient was created
+		assertNotNull(goldenRecord.getMeta().getTag("http://hapifhir.io/fhir/NamingSystem/mdm-record-status", "GOLDEN_RECORD"));
+	}
 
-  @Test
-    public void testWebsocketSubscription() throws Exception {
-        /*
-         * Create subscription
-         */
-        Subscription subscription = new Subscription();
-        subscription.setReason("Monitor new neonatal function (note, age will be determined by the monitor)");
-        subscription.setStatus(Subscription.SubscriptionStatus.REQUESTED);
-        subscription.setCriteria("Observation?status=final");
+	private List<Patient> getPatients() {
+		Bundle bundle = ourClient.search().forResource(Patient.class).cacheControl(new CacheControlDirective().setNoCache(true)).returnBundle(Bundle.class).execute();
+		List<Patient> retVal = BundleUtil.toListOfResourcesOfType(ourCtx, bundle, Patient.class);
+		retVal.sort(comparing(o -> ((Patient) o).getMeta().getLastUpdated()).reversed());
+		return retVal;
+	}
+	private Patient getGoldenResourcePatient() {
+		Bundle bundle = ourClient.search()
+			.forResource(Patient.class)
+			.withTag("http://hapifhir.io/fhir/NamingSystem/mdm-record-status", "GOLDEN_RECORD")
+			.cacheControl(new CacheControlDirective().setNoCache(true)).returnBundle(Bundle.class).execute();
+		if (bundle.getEntryFirstRep() != null) {
+			return (Patient) bundle.getEntryFirstRep().getResource();
+		} else {
+			return null;
+		}
+	}
 
-        Subscription.SubscriptionChannelComponent channel = new Subscription.SubscriptionChannelComponent();
-        channel.setType(Subscription.SubscriptionChannelType.WEBSOCKET);
-        channel.setPayload("application/json");
-        subscription.setChannel(channel);
+	@Test
+	@Order(1)
+	public void testWebsocketSubscription() throws Exception {
+		/*
+		 * Create subscription
+		 */
+		Subscription subscription = new Subscription();
+		subscription.setReason("Monitor new neonatal function (note, age will be determined by the monitor)");
+		subscription.setStatus(Subscription.SubscriptionStatus.REQUESTED);
+		subscription.setCriteria("Observation?status=final");
 
-        MethodOutcome methodOutcome = TestSetup.ourClient.create().resource(subscription).execute();
-        IIdType mySubscriptionId = methodOutcome.getId();
+		Subscription.SubscriptionChannelComponent channel = new Subscription.SubscriptionChannelComponent();
+		channel.setType(Subscription.SubscriptionChannelType.WEBSOCKET);
+		channel.setPayload("application/json");
+		subscription.setChannel(channel);
 
-        // Wait for the subscription to be activated
-        await().until(() -> activeSubscriptionCount() == 3);
+		MethodOutcome methodOutcome = ourClient.create().resource(subscription).execute();
+		IIdType mySubscriptionId = methodOutcome.getId();
 
-        /*
-         * Attach websocket
-         */
+		// Wait for the subscription to be activated
+		await().until(() -> activeSubscriptionCount() == 3);
 
-        WebSocketClient myWebSocketClient = new WebSocketClient();
-        SocketImplementation mySocketImplementation = new SocketImplementation(mySubscriptionId.getIdPart(), EncodingEnum.JSON);
+		/*
+		 * Attach websocket
+		 */
 
-        myWebSocketClient.start();
-        URI echoUri = new URI("ws://localhost:" + TestSetup.ourPort + "/hapi-fhir-jpaserver/websocket");
-        ClientUpgradeRequest request = new ClientUpgradeRequest();
-        TestSetup.ourLog.info("Connecting to : {}", echoUri);
-        Future<Session> connection = myWebSocketClient.connect(mySocketImplementation, echoUri, request);
-        Session session = connection.get(2, TimeUnit.SECONDS);
+		WebSocketClient myWebSocketClient = new WebSocketClient();
+		SocketImplementation mySocketImplementation = new SocketImplementation(mySubscriptionId.getIdPart(), EncodingEnum.JSON);
 
-        TestSetup.ourLog.info("Connected to WS: {}", session.isOpen());
+		myWebSocketClient.start();
+		URI echoUri = new URI("ws://localhost:" + port + "/websocket");
+		ClientUpgradeRequest request = new ClientUpgradeRequest();
+		ourLog.info("Connecting to : {}", echoUri);
+		Future<Session> connection = myWebSocketClient.connect(mySocketImplementation, echoUri, request);
+		Session session = connection.get(2, TimeUnit.SECONDS);
 
-        /*
-         * Create a matching resource
-         */
-        Observation obs = new Observation();
-        obs.setStatus(Observation.ObservationStatus.FINAL);
-        TestSetup.ourClient.create().resource(obs).execute();
+		ourLog.info("Connected to WS: {}", session.isOpen());
 
-        // Give some time for the subscription to deliver
-        Thread.sleep(2000);
+		/*
+		 * Create a matching resource
+		 */
+		Observation obs = new Observation();
+		obs.setStatus(Observation.ObservationStatus.FINAL);
+		ourClient.create().resource(obs).execute();
 
-        /*
-         * Ensure that we receive a ping on the websocket
-         */
-        waitForSize(1, () -> mySocketImplementation.myPingCount);
+		// Give some time for the subscription to deliver
+		sleep(2000);
 
-        /*
-         * Clean up
-         */
-        TestSetup.ourClient.delete().resourceById(mySubscriptionId).execute();
-    }
+		/*
+		 * Ensure that we receive a ping on the websocket
+		 */
+		waitForSize(1, () -> mySocketImplementation.myPingCount);
 
-  private int activeSubscriptionCount() {
-    return TestSetup.ourClient.search().forResource(Subscription.class).where(Subscription.STATUS.exactly().code("active")).cacheControl(new CacheControlDirective().setNoCache(true)).returnBundle(Bundle.class).execute().getEntry().size();
-  }
+		/*
+		 * Clean up
+		 */
+		ourClient.delete().resourceById(mySubscriptionId).execute();
+	}
 
-  @AfterAll
-    public static void afterClass() throws Exception {
-        TestSetup.ourServer.stop();
-    }
+	private int activeSubscriptionCount() {
+		return ourClient.search().forResource(Subscription.class).where(Subscription.STATUS.exactly().code("active")).cacheControl(new CacheControlDirective().setNoCache(true)).returnBundle(Bundle.class).execute().getEntry().size();
+	}
 
-    @BeforeAll
-    public static void beforeClass() throws Exception {
-        TestSetup.init();
-    }
 
-    public static void main(String[] theArgs) throws Exception {
-        beforeClass();
-    }
+	@BeforeEach
+	void beforeEach() {
+
+		ourCtx = FhirContext.forR4();
+		ourCtx.getRestfulClientFactory().setServerValidationMode(ServerValidationModeEnum.NEVER);
+		ourCtx.getRestfulClientFactory().setSocketTimeout(1200 * 1000);
+		String ourServerBase = "http://localhost:" + port + "/fhir/";
+		ourClient = ourCtx.newRestfulGenericClient(ourServerBase);
+//		ourClient.registerInterceptor(new LoggingInterceptor(false));
+	}
 }

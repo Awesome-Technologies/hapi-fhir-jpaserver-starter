@@ -1,21 +1,30 @@
 package ca.uhn.fhir.jpa.starter;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Import;
+
 import javax.servlet.ServletException;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 
 import ca.uhn.fhir.jpa.api.dao.DaoRegistry;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.support.SpringBeanAutowiringSupport;
 
-@Component
+@Import(AppProperties.class)
 public class JpaRestfulServer extends BaseJpaRestfulServer {
 
-  private static final long serialVersionUID = 1L;
+  @Autowired
+  AppProperties appProperties;
 
   @Autowired
   private DaoRegistry daoRegistry;
+
+  private static final long serialVersionUID = 1L;
+
+  public JpaRestfulServer() {
+    super();
+  }
 
   @Override
   protected void initialize() throws ServletException {
@@ -39,8 +48,8 @@ public class JpaRestfulServer extends BaseJpaRestfulServer {
     PerformanceMeasurementInterceptor earlyMeasurementInterceptor = new PerformanceMeasurementInterceptor();
     registerInterceptor(earlyMeasurementInterceptor);
 
-    PushInterceptor pushInterceptor = new PushInterceptor(daoRegistry, HapiProperties.getPushUrl(), HapiProperties.getNormalAppId(), HapiProperties.getVoipAppId());
-    registerInterceptor(pushInterceptor);
+    PushInterceptor pushInterceptor = new PushInterceptor(daoRegistry, appProperties.getAmp().getPush().getUrl(),
+            appProperties.getAmp().getPush().getApp_id_normal(), appProperties.getAmp().getPush().getApp_id_voip());
 
     /*
      * Add authentication interceptor

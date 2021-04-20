@@ -44,16 +44,19 @@ import javax.servlet.http.HttpServletRequest;
 public class JpaConformanceProviderAMP extends JpaConformanceProviderR4 {
 
   private volatile CapabilityStatement myCachedValue;
+  private volatile AppProperties appProperties;
 
   /**
    * Constructor
    */
-  public JpaConformanceProviderAMP(@Nonnull RestfulServer theRestfulServer, @Nonnull IFhirSystemDao<Bundle, Meta> theSystemDao, @Nonnull DaoConfig theDaoConfig, @Nonnull ISearchParamRegistry theSearchParamRegistry) {
+  public JpaConformanceProviderAMP(@Nonnull RestfulServer theRestfulServer, @Nonnull IFhirSystemDao<Bundle, Meta> theSystemDao, @Nonnull DaoConfig theDaoConfig, @Nonnull ISearchParamRegistry theSearchParamRegistry, @Nonnull AppProperties appProperties) {
     super(theRestfulServer, theSystemDao, theDaoConfig, theSearchParamRegistry);
+    this.appProperties = appProperties;
   }
 
   public void setSearchParamRegistry(ISearchParamRegistry theSearchParamRegistry) {
     super.setSearchParamRegistry(theSearchParamRegistry);
+    this.appProperties = appProperties;
   }
 
   @Override
@@ -74,7 +77,7 @@ public class JpaConformanceProviderAMP extends JpaConformanceProviderR4 {
         )
       );
 
-    String oauthBaseUrl = HapiProperties.getAmpAuthUrl();
+    String oauthBaseUrl = appProperties.getAmp().getAuth().getUrl();
     Extension oauthUris = new Extension("http://fhir-registry.smarthealthit.org/StructureDefinition/oauth-uris");
     oauthUris.addExtension(new Extension("authorize", new UriType(oauthBaseUrl + "/protocol/openid-connect/auth")));
     oauthUris.addExtension(new Extension("token", new UriType(oauthBaseUrl + "/protocol/openid-connect/token")));
@@ -84,8 +87,8 @@ public class JpaConformanceProviderAMP extends JpaConformanceProviderR4 {
     retVal.getRestFirstRep().setSecurity(retValSec);
 
     // AMP model versions
-    Integer modelVersion = HapiProperties.getAmpModelVersion();
-    Integer pushVersion = HapiProperties.getAmpPushModelVersion();
+    Integer modelVersion = appProperties.getAmp().getModel().getVersion();
+    Integer pushVersion = appProperties.getAmp().getPush().getVersion();
 
     retVal.addExtension(new Extension("institute.amp.model-version", new IntegerType(modelVersion)));
     retVal.addExtension(new Extension("clinic.amp.model-version", new IntegerType(modelVersion)));

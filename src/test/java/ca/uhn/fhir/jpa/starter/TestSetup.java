@@ -16,6 +16,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 
 public class TestSetup {
 
@@ -24,6 +26,9 @@ public class TestSetup {
   public static FhirContext ourCtx;
   public static int ourPort;
   public static Server ourServer;
+
+  @Autowired
+  static AppProperties appProperties;
 
   public static void init() throws Exception {
     ourPort = 8080;
@@ -52,7 +57,7 @@ public class TestSetup {
 
     ourCtx.getRestfulClientFactory().setServerValidationMode(ServerValidationModeEnum.NEVER);
     ourCtx.getRestfulClientFactory().setSocketTimeout(1200 * 1000);
-    String ourServerBase = HapiProperties.getServerAddress();
+    String ourServerBase = appProperties.getServer_address();
     ourServerBase = "http://localhost:" + ourPort + "/hapi-fhir-jpaserver/fhir/";
 
     ourClient = ourCtx.newRestfulGenericClient(ourServerBase);
