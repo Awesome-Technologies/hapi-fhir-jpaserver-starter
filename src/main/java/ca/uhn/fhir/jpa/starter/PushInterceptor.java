@@ -258,16 +258,18 @@ public class PushInterceptor {
 
     // read Communication id
     final String communicationId = myCommunication.getId();
+    String triggeredBy = communicationId;
     final String requestType = getReferenceType(communicationId);
     if (!requestType.equals("Communication")) {
       ourLog.warn("Reference is not a Communication but: " + requestType);
       return;
     }
 
-    // check if status is 'completed' or 'in progress'
+    // check if status is 'completed', 'in progress' or 'not done'
     final CommunicationStatus status = myCommunication.getStatus();
     if (!status.getDisplay().toLowerCase().equals("completed")
       && !status.getDisplay().toLowerCase().equals("in progress")
+      && !status.getDisplay().toLowerCase().equals("not done")
       ) {
       return;
     }
@@ -294,47 +296,59 @@ public class PushInterceptor {
     List<String> backgroundPushTokens = new ArrayList<String>();
     Map<String, Endpoint> endpointMap = new HashMap<>();
 
+
+    // check if status is 'not done'
+    if (status.getDisplay().toLowerCase().equals("not done")) {
+      // DiagnosticReport was created -> push to recipient, background push to sender (CASE_CONSULTATION_REPORT_NEW)
+      pushTokens.addAll(getPushTokens(sender, "push_token", "", endpointMap));
+      backgroundPushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
+
+      triggeredBy = myCommunication.getPartOfFirstRep().getReference();
+      ourLog.info("triggerdby is " + triggeredBy);
+      push_type = "CASE_CONSULTATION_REPORT_NEW";
+    }
+
     // check if status is 'completed'
     if (status.getDisplay().toLowerCase().equals("completed")) {
-        // check if topic is PHONE-CONSULT
-        if (myCommunication.hasTopic()) {
-          final CodeableConcept topic = myCommunication.getTopic();
-          if (!topic.getText().toLowerCase().equals("phone-consult")) {
-            return;
-          }
-          // pending call has ended -> background push to sender and recipient (CALL_ENDED)
-          backgroundPushTokens.addAll(getPushTokenFromPayload(myCommunication.getPayloadFirstRep().getContentStringType().toString(), sender ,true, endpointMap));
-          backgroundPushTokens.addAll(getPushTokenFromPayload(myCommunication.getPayloadFirstRep().getContentStringType().toString(), recipient ,false, endpointMap));
-
-          push_type = "CALL_ENDED";
-        } else {
-          // check if Communication is already read / has 'received' date set
-          if (myCommunication.hasReceived()) {
-        	// user has read a message -> background push to sender and recipient (CASE_COMMUNICATION_READ)
-            backgroundPushTokens.addAll(getPushTokens(sender, "push_token", "", endpointMap));
-            backgroundPushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
-            push_type = "CASE_COMMUNICATION_READ";
-          }
+      // check if topic is PHONE-CONSULT
+      if (myCommunication.hasTopic()) {
+        final CodeableConcept topic = myCommunication.getTopic();
+        if (!topic.getText().toLowerCase().equals("phone-consult")) {
+          return;
         }
-    } else {
-      // status is 'in progress'
-        // a new Communication was sent -> push to recipient, background push to sender (CASE_REQUEST_NEW)
-        pushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
-        // background push to senders
-        backgroundPushTokens.addAll(getPushTokens(sender, "push_token", "", endpointMap));
-        push_type = "CASE_REQUEST_NEW";
+        // pending call has ended -> background push to sender and recipient (CALL_ENDED)
+        backgroundPushTokens.addAll(getPushTokenFromPayload(myCommunication.getPayloadFirstRep().getContentStringType().toString(), sender ,true, endpointMap));
+        backgroundPushTokens.addAll(getPushTokenFromPayload(myCommunication.getPayloadFirstRep().getContentStringType().toString(), recipient ,false, endpointMap));
+        push_type = "CALL_ENDED";
+      } else {
+        // check if Communication is already read / has 'received' date set
+        if (myCommunication.hasReceived()) {
+          // user has read a message -> background push to sender and recipient (CASE_COMMUNICATION_READ)
+          backgroundPushTokens.addAll(getPushTokens(sender, "push_token", "", endpointMap));
+          backgroundPushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
+          push_type = "CASE_COMMUNICATION_READ";
+        }
+      }
+    }
+
+    // status is 'in progress'
+    if (status.getDisplay().toLowerCase().equals("in progress")) {
+      // a new Communication was sent -> push to recipient, background push to sender (CASE_REQUEST_NEW)
+      pushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
+      // background push to senders
+      backgroundPushTokens.addAll(getPushTokens(sender, "push_token", "", endpointMap));
+      push_type = "CASE_REQUEST_NEW";
     }
 
     // send a push notification via Sygnal to APNS
     List<String> rejectedTokens = new ArrayList<String>();
     if (!pushTokens.isEmpty()) {
-      rejectedTokens.addAll(sendPushNotification(pushTokens, myOperationType, communicationId, app_id, false, push_type));
+      rejectedTokens.addAll(sendPushNotification(pushTokens, myOperationType, triggeredBy, app_id, false, push_type));
     }
     if (!backgroundPushTokens.isEmpty()) {
-      rejectedTokens.addAll(sendPushNotification(backgroundPushTokens, myOperationType, communicationId, app_id, true, push_type));
+      rejectedTokens.addAll(sendPushNotification(backgroundPushTokens, myOperationType, triggeredBy, app_id, true, push_type));
     }
-
-    if (!rejectedTokens.isEmpty()) {
+     if (!rejectedTokens.isEmpty()) {
       removePushTokens(rejectedTokens, endpointMap, "push_token");
     }
   }
@@ -422,8 +436,8 @@ public class PushInterceptor {
   }
 
   private void handleDiagnosticReport(ServletRequestDetails theRequestDetails, String myOperationType) {
-    // only push when DiagnosticReport is created or updated
-    if (!myOperationType.equals("create") && !myOperationType.equals("update")) return;
+    // only push when DiagnosticReport is updated
+    if (!myOperationType.equals("update")) return;
 
     final IBaseResource diagnosticReport = theRequestDetails.getResource();
       if (diagnosticReport == null || !(diagnosticReport instanceof DiagnosticReport)) {
@@ -465,17 +479,11 @@ public class PushInterceptor {
       Map<String, Endpoint> endpointMap = new HashMap<>();
       String push_type = null;
 
-      if (myOperationType.equals("create")) {
-        // DiagnosticReport was created -> push to recipient, background push to sender (CASE_CONSULTATION_REPORT_NEW)
-        pushTokens.addAll(getPushTokens(srRequester, "push_token", "", endpointMap));
-        backgroundPushTokens.addAll(getPushTokens(srPerformer, "push_token", "", endpointMap));
-        push_type = "CASE_CONSULTATION_REPORT_NEW";
-      } else {
-        // DiagnosticReport was accepted -> push to sender, background push to recipient (CASE_CONSULTATION_REPORT_CONFIRMED)
-        pushTokens.addAll(getPushTokens(srPerformer, "push_token", "", endpointMap));
-        backgroundPushTokens.addAll(getPushTokens(srRequester, "push_token", "", endpointMap));
-        push_type = "CASE_CONSULTATION_REPORT_CONFIRMED";
-      }
+      // DiagnosticReport was accepted -> push to sender, background push to recipient (CASE_CONSULTATION_REPORT_CONFIRMED)
+      pushTokens.addAll(getPushTokens(srPerformer, "push_token", "", endpointMap));
+      backgroundPushTokens.addAll(getPushTokens(srRequester, "push_token", "", endpointMap));
+      push_type = "CASE_CONSULTATION_REPORT_CONFIRMED";
+
 
       // send a push notification via Sygnal to APNS
       List<String> rejectedTokens = new ArrayList<String>();
