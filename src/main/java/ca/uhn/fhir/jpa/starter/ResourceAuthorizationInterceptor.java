@@ -117,7 +117,7 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     }
 
     // get list of authorized organizations
-    final List<IdType> myOrgIds = bearerToken.getAuthorizedOrganizations();
+    final List<IdType> myOrgIds = bearerToken.getAuthorizedOrganizations(myDaoRegistry);
 
     // get all organizations
     Set<IIdType> authorizedOrganizationList = new HashSet<>();

@@ -200,7 +200,7 @@ public class PushInterceptor {
       final String authHeader = theRequestDetails.getHeader("Authorization");
       final BearerToken bearerToken = new BearerToken(authHeader);
       // get list of organizations
-      final List<IdType> myOrgIds = bearerToken.getAuthorizedOrganizations();
+      final List<IdType> myOrgIds = bearerToken.getAuthorizedOrganizations(myDaoRegistry);
 
       // user requests or accepts to close the case -> push to sender of the request, background push to receiver of the request (CLOSE_CASE_REQUEST, CLOSE_CASE_CONFIRMED)
       if (myOrgIds.contains(new IdType(requester.getReference()))) {

@@ -87,7 +87,7 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
       return new AuthorizedList();
     }
 
-    final List<IdType> myOrgIds = bearerToken.getAuthorizedOrganizations();
+    final List<IdType> myOrgIds = bearerToken.getAuthorizedOrganizations(myDaoRegistry);
 
     // get all organizations
     Set<IIdType> authorizedOrganizationList = new HashSet<>();

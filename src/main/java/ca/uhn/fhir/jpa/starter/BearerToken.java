@@ -24,7 +24,15 @@
 
 package ca.uhn.fhir.jpa.starter;
 
+import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r4.model.IdType;
+import org.hl7.fhir.r4.model.PractitionerRole;
+
+import ca.uhn.fhir.jpa.api.dao.DaoRegistry;
+import ca.uhn.fhir.jpa.api.dao.IFhirResourceDao;
+import ca.uhn.fhir.jpa.searchparam.SearchParameterMap;
+import ca.uhn.fhir.rest.api.server.IBundleProvider;
+import ca.uhn.fhir.rest.param.ReferenceParam;
 import ca.uhn.fhir.rest.server.exceptions.AuthenticationException;
 
 import com.google.common.base.Charsets;
@@ -36,16 +44,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
-import java.security.interfaces.RSAKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.PublicKey;
 import java.security.spec.EncodedKeySpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
-
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
 
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
@@ -146,17 +149,48 @@ public class BearerToken {
 
   public Boolean isAdmin() {
     // TODO support multiple organizations for a user
-    if (jwt.getClaim("fhirOrganization").asString().equals("Administrator")) {
+    if (!jwt.getClaim("fhirOrganization").isNull() && jwt.getClaim("fhirOrganization").asString().equals("Administrator")) {
       return true;
     }
     return false;
   }
 
-  public List<IdType> getAuthorizedOrganizations() {
+  public List<IdType> getAuthorizedOrganizations(DaoRegistry theDaoRegistry) {
     List<IdType> myOrgIds = new ArrayList<>();
-    // TODO support multiple organizations for a user
-    myOrgIds.add(new IdType(jwt.getClaim("fhirOrganization").asString()));
-    ourLog.info("Organizations " + myOrgIds.toString());
+    String fhirOrganization = jwt.getClaim("fhirOrganization").asString();
+    String fhirUser = jwt.getClaim("fhirUser").asString();
+
+    ourLog.info(fhirOrganization);
+    ourLog.info(fhirUser);
+
+    // check if account is an organization account
+    if (null != fhirOrganization && !fhirOrganization.equals("")) {
+      ourLog.info("got org account");
+      // TODO support multiple organizations for a user
+      myOrgIds.add(new IdType(fhirOrganization));
+      ourLog.info("Organizations " + myOrgIds.toString());
+    }
+
+    // check if account is a personalized account
+    if (null != fhirUser && !fhirUser.equals("")) {
+      ourLog.info("got user account");
+      // read PractitionerRole
+      IFhirResourceDao<PractitionerRole> practitionerRoleDao = theDaoRegistry.getResourceDao("PractitionerRole");
+
+      SearchParameterMap practitionerRoleParams = new SearchParameterMap(PractitionerRole.SP_PRACTITIONER, new ReferenceParam(fhirUser));
+      IBundleProvider searchPractitionerRoleList = practitionerRoleDao.search(practitionerRoleParams);
+      for (IBaseResource practitionerRole : searchPractitionerRoleList.getResources(0, searchPractitionerRoleList.size())) {
+        if (practitionerRole == null || !(practitionerRole instanceof PractitionerRole)) {
+              ourLog.warn("PractitionerRole is not readable");
+              continue;
+          }
+        // add Organization of PractitionerRole
+        myOrgIds.add(new IdType(((PractitionerRole) practitionerRole).getOrganization().getReference()));
+      }
+
+      ourLog.info("Organizations " + myOrgIds.toString());
+    }
+
     return myOrgIds;
   }
 }
