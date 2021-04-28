@@ -50,6 +50,7 @@ public class JpaRestfulServer extends BaseJpaRestfulServer {
 
     PushInterceptor pushInterceptor = new PushInterceptor(daoRegistry, appProperties.getAmp().getPush().getUrl(),
             appProperties.getAmp().getPush().getApp_id_normal(), appProperties.getAmp().getPush().getApp_id_voip());
+    registerInterceptor(pushInterceptor);
 
     /*
      * Add authentication interceptor
