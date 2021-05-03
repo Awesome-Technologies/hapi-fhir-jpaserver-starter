@@ -395,13 +395,13 @@ class ResourceAuthorizationInterceptorTest {
     when(mockServer.getFhirContext()).thenReturn(mockContext);
 
     when(bearerToken.isAdmin()).thenReturn(false);
-    when(bearerToken.getAuthorizedOrganizations()).thenReturn(authorizedOrganizationList);
+    when(bearerToken.getAuthorizedOrganizations(mockRegistry)).thenReturn(authorizedOrganizationList);
 
     Verdict verdict = interceptor.applyRulesAndReturnDecision(RestOperationTypeEnum.READ, requestDetails, null, new IdType(requestedOrganizationId), null, Pointcut.SERVER_INCOMING_REQUEST_PRE_HANDLED);
     verify(bearerTokenFactory, times(1)).apply("Bearer testJwtTokenMock");
 
     verify(bearerToken, atLeastOnce()).isAdmin();
-    verify(bearerToken, atLeastOnce()).getAuthorizedOrganizations();
+    verify(bearerToken, atLeastOnce()).getAuthorizedOrganizations(mockRegistry);
 
     verify(requestDetails, atLeastOnce()).getHeader(("Authorization"));
     verify(requestDetails, atLeastOnce()).getRestOperationType();
@@ -473,7 +473,7 @@ class ResourceAuthorizationInterceptorTest {
     verify(bearerTokenFactory, times(1)).apply("Bearer testJwtTokenMock");
 
     verify(bearerToken, atLeastOnce()).isAdmin();
-    verify(bearerToken, atLeastOnce()).getAuthorizedOrganizations();
+    verify(bearerToken, atLeastOnce()).getAuthorizedOrganizations(mockRegistry);
 
     verify(requestDetails, atLeastOnce()).getHeader(("Authorization"));
     verify(requestDetails, atLeastOnce()).getRestOperationType();
@@ -537,7 +537,7 @@ class ResourceAuthorizationInterceptorTest {
     verify(bearerTokenFactory, times(1)).apply("Bearer testJwtTokenMock");
 
     verify(bearerToken, atLeastOnce()).isAdmin();
-    verify(bearerToken, atLeastOnce()).getAuthorizedOrganizations();
+    verify(bearerToken, atLeastOnce()).getAuthorizedOrganizations(mockRegistry);
 
     verify(requestDetails, atLeastOnce()).getHeader(("Authorization"));
     verify(requestDetails, atLeastOnce()).getRestOperationType();
@@ -602,7 +602,7 @@ class ResourceAuthorizationInterceptorTest {
     verify(bearerTokenFactory, times(1)).apply("Bearer testJwtTokenMock");
 
     verify(bearerToken, atLeastOnce()).isAdmin();
-    verify(bearerToken, atLeastOnce()).getAuthorizedOrganizations();
+    verify(bearerToken, atLeastOnce()).getAuthorizedOrganizations(mockRegistry);
 
     verify(requestDetails, atLeastOnce()).getHeader(("Authorization"));
     verify(requestDetails, atLeastOnce()).getRestOperationType();
@@ -617,7 +617,7 @@ class ResourceAuthorizationInterceptorTest {
     List<IdType> authorizedOrganizationList = new ArrayList<IdType>(1);
     authorizedOrganizationList.add(new IdType("Organization/" + orgId));
     when(bearerToken.isAdmin()).thenReturn(false);
-    when(bearerToken.getAuthorizedOrganizations()).thenReturn(authorizedOrganizationList);
+    when(bearerToken.getAuthorizedOrganizations(mockRegistry)).thenReturn(authorizedOrganizationList);
   }
 
   private void mockAuthorizationAndAccessToResource(int srId, String resourceType) {
@@ -678,7 +678,7 @@ class ResourceAuthorizationInterceptorTest {
     verify(bearerTokenFactory, times(1)).apply("Bearer testJwtTokenMock");
 
     verify(bearerToken, atLeastOnce()).isAdmin();
-    verify(bearerToken, atLeastOnce()).getAuthorizedOrganizations();
+    verify(bearerToken, atLeastOnce()).getAuthorizedOrganizations(mockRegistry);
 
     verify(requestDetails, atLeastOnce()).getHeader(("Authorization"));
     verify(requestDetails, atLeastOnce()).getRestOperationType();
