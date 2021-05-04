@@ -300,8 +300,8 @@ public class PushInterceptor {
     // check if status is 'not done'
     if (status.getDisplay().toLowerCase().equals("not done")) {
       // DiagnosticReport was created -> push to recipient, background push to sender (CASE_CONSULTATION_REPORT_NEW)
-      pushTokens.addAll(getPushTokens(sender, "push_token", "", endpointMap));
-      backgroundPushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
+      pushTokens.addAll(getPushTokens(recipient, "push_token", "", endpointMap));
+      backgroundPushTokens.addAll(getPushTokens(sender, "push_token", "", endpointMap));
 
       triggeredBy = myCommunication.getPartOfFirstRep().getReference();
       ourLog.info("triggerdby is " + triggeredBy);
