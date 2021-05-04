@@ -591,22 +591,29 @@ public class PushInterceptor {
 
   // Remove push tokens from endpoints in case they were rejected by sygnal
   private void removePushTokens(List<String> pushTokens, Map<String, Endpoint> endpointMap, String token_type) {
-    List<Endpoint> updatedEndpoints = new ArrayList<>(endpointMap.size());
+    Set<Endpoint> updatedEndpoints = new HashSet<>(endpointMap.size());
     for (String token : pushTokens) {
       if (endpointMap.containsKey(token)) {
         final Endpoint myEndpoint = endpointMap.get(token);
-        for (ContactPoint contact: myEndpoint.getContact()) {
-          JSONObject contactPoint;
+        for (Iterator<ContactPoint> it = myEndpoint.getContact().iterator(); it.hasNext();) {
+          ContactPoint contactPoint = it.next();
+          JSONObject contactJson;
           try {
-            contactPoint = new JSONObject(contact.getValue());
+            contactJson = new JSONObject(contactPoint.getValue());
           } catch (JSONException e) {
             // TODO decide if something should be done here
             continue;
           }
-          if (contactPoint.has(token_type) && pushTokens.contains(contactPoint.getString(token_type))) {
-            contactPoint.remove(token_type);
-            // Only need to write to the ContactPoint object if we actually change the value
-            contact.setValue(contactPoint.toString());
+          if (contactJson.has(token_type) && pushTokens.contains(contactJson.getString(token_type))) {
+            contactJson.remove(token_type);
+            // remove ContactPoint if it's empty now
+            if (!contactJson.has("push_token") && !contactJson.has("voip_token")) {
+              it.remove();
+            } else {
+              // Only need to write to the ContactPoint object if we actually change the value
+              contactPoint.setValue(contactJson.toString());
+            }
+
             updatedEndpoints.add(myEndpoint);
           }
         }
