@@ -551,6 +551,10 @@ public class PushInterceptor {
         if(!device_id.equals("")){
           if(!json.getString("device_id").equals(device_id)) continue;
         }
+
+        // check if token exists in ContactPoint
+        if (!json.has(token_type)) continue;
+
         final String tokenValue = json.getString(token_type);
         if(!tokenValue.equals("")){
           pushTokens.add(tokenValue);
