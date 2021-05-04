@@ -160,12 +160,8 @@ public class BearerToken {
     String fhirOrganization = jwt.getClaim("fhirOrganization").asString();
     String fhirUser = jwt.getClaim("fhirUser").asString();
 
-    ourLog.info(fhirOrganization);
-    ourLog.info(fhirUser);
-
     // check if account is an organization account
     if (null != fhirOrganization && !fhirOrganization.equals("")) {
-      ourLog.info("got org account");
       // TODO support multiple organizations for a user
       myOrgIds.add(new IdType(fhirOrganization));
       ourLog.info("Organizations " + myOrgIds.toString());
@@ -173,7 +169,6 @@ public class BearerToken {
 
     // check if account is a personalized account
     if (null != fhirUser && !fhirUser.equals("")) {
-      ourLog.info("got user account");
       // read PractitionerRole
       IFhirResourceDao<PractitionerRole> practitionerRoleDao = theDaoRegistry.getResourceDao("PractitionerRole");
 
