@@ -123,6 +123,10 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
         break;
       case "Organization":
         // allow reading all Organizations
+      case "Practitioner":
+        // allow reading all Practitioners
+      case "PractitionerRole":
+        // allow reading all PractitionerRoles
         return new AuthorizedList();
       case "Communication":
         authorizedResourceList = getCommunicationResources(orgReferences, theRequestDetails);

@@ -290,6 +290,12 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         return buildMediaRules(authorizedOrganizationList, theRequestDetails);
       case "Coverage":
         return buildCoverageRules(authorizedOrganizationList, theRequestDetails);
+      case "Practitioner":
+      case "PractitionerRole":
+        // allow reading all Practitioners and PractitionerRoles for all authenticated users
+        return new RuleBuilder()
+          .allowAll("Allow all")
+          .build();
       default: // deny per default
         return new RuleBuilder()
            .denyAll("Deny all")
