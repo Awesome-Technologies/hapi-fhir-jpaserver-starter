@@ -21,6 +21,7 @@ import org.hl7.fhir.r4.model.Endpoint;
 import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Endpoint.EndpointStatus;
 import org.hl7.fhir.r4.model.Organization;
+import org.hl7.fhir.r4.model.PractitionerRole;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
 import org.hl7.fhir.r4.model.ServiceRequest.ServiceRequestStatus;
@@ -137,18 +138,30 @@ public class PushInterceptor {
     }
 
     // find requester organization
-    final Reference requester = myServiceRequest.getRequester();
+    Reference requester = myServiceRequest.getRequester();
     final String requesterType = getReferenceType(requester.getReference());
-    if (!requesterType.equals("Organization")) {
-      ourLog.warn("Requester is empty or not an Organization but: " + requesterType);
+
+    // read Organization from PractitionerRole
+    if (requesterType.equals("PractitionerRole")) {
+        requester = getOrgFromRole(requester);
+    }
+
+    if (!requesterType.equals("Organization") && !requesterType.equals("PractitionerRole")) {
+      ourLog.warn("Requester is empty or not an Organization or PractitionerRole but: " + requesterType);
       return;
     }
 
     // find performer organization
-    final Reference performer = myServiceRequest.getPerformerFirstRep();
+    Reference performer = myServiceRequest.getPerformerFirstRep();
     final String performerType = getReferenceType(performer.getReference());
-    if (!performerType.equals("Organization")) {
-      ourLog.warn("Performer is empty or not an Organization but: " + performerType);
+
+    // read Organization from PractitionerRole
+    if (performerType.equals("PractitionerRole")) {
+      performer = getOrgFromRole(performer);
+    }
+
+    if (!performerType.equals("Organization") && !performerType.equals("PractitionerRole")) {
+      ourLog.warn("Performer is empty or not an Organization or PractitionerRole but: " + performerType);
       return;
     }
 
@@ -275,18 +288,30 @@ public class PushInterceptor {
     }
 
     // find sender organization
-    final Reference sender = myCommunication.getSender();
+    Reference sender = myCommunication.getSender();
     final String senderType = getReferenceType(sender.getReference());
-    if (!senderType.equals("Organization")) {
-      ourLog.warn("Sender is empty or not an Organization but: " + senderType);
+
+    // read Organization from PractitionerRole
+    if (senderType.equals("PractitionerRole")) {
+      sender = getOrgFromRole(sender);
+    }
+
+    if (!senderType.equals("Organization") && !senderType.equals("PractitionerRole")) {
+      ourLog.warn("Sender is empty or not an Organization or PractitionerRole but: " + senderType);
       return;
     }
 
     // find recipient organization
-    final Reference recipient = myCommunication.getRecipientFirstRep();
+    Reference recipient = myCommunication.getRecipientFirstRep();
     final String recipientType = getReferenceType(recipient.getReference());
-    if (!recipientType.equals("Organization")) {
-      ourLog.warn("Recipient is empty or not an Organization but: " + recipientType);
+
+    // read Organization from PractitionerRole
+    if (recipientType.equals("PractitionerRole")) {
+      recipient = getOrgFromRole(recipient);
+    }
+
+    if (!recipientType.equals("Organization") && !recipientType.equals("PractitionerRole")) {
+      ourLog.warn("Recipient is empty or not an Organization or PractitionerRole but: " + recipientType);
       return;
     }
 
@@ -348,7 +373,7 @@ public class PushInterceptor {
     if (!backgroundPushTokens.isEmpty()) {
       rejectedTokens.addAll(sendPushNotification(backgroundPushTokens, myOperationType, triggeredBy, app_id, true, push_type));
     }
-     if (!rejectedTokens.isEmpty()) {
+    if (!rejectedTokens.isEmpty()) {
       removePushTokens(rejectedTokens, endpointMap, "push_token");
     }
   }
@@ -379,18 +404,30 @@ public class PushInterceptor {
     }
 
     // find requester organization
-    final Reference sender = myCommunicationRequest.getSender();
+    Reference sender = myCommunicationRequest.getSender();
     final String senderType = getReferenceType(sender.getReference());
-    if (!senderType.equals("Organization")) {
-      ourLog.warn("Sender is empty or not an Organization but: " + senderType);
+
+    // read Organization from PractitionerRole
+    if (senderType.equals("PractitionerRole")) {
+      sender = getOrgFromRole(sender);
+    }
+
+    if (!senderType.equals("Organization") && !senderType.equals("PractitionerRole")) {
+      ourLog.warn("Sender is empty or not an Organization or PractitionerRole but: " + senderType);
       return;
     }
 
     // find recipient organization
-    final Reference recipient = myCommunicationRequest.getRecipientFirstRep();
+    Reference recipient = myCommunicationRequest.getRecipientFirstRep();
     final String recipientType = getReferenceType(recipient.getReference());
-    if (!recipientType.equals("Organization")) {
-      ourLog.warn("Recipient is empty or not an Organization but: " + recipientType);
+
+    // read Organization from PractitionerRole
+    if (recipientType.equals("PractitionerRole")) {
+      recipient = getOrgFromRole(recipient);
+    }
+
+    if (!recipientType.equals("Organization") && !recipientType.equals("PractitionerRole")) {
+      ourLog.warn("Recipient is empty or not an Organization or PractitionerRole but: " + recipientType);
       return;
     }
 
@@ -459,17 +496,29 @@ public class PushInterceptor {
       IFhirResourceDao<ServiceRequest> serviceRequestDao = myDaoRegistry.getResourceDao("ServiceRequest");
       ServiceRequest serviceRequest = serviceRequestDao.read(new IdType(serviceRequestReference.getReference()));
 
-      final Reference srPerformer = serviceRequest.getPerformerFirstRep();
+      Reference srPerformer = serviceRequest.getPerformerFirstRep();
       final String performerType = getReferenceType(srPerformer.getReference());
-      if (!performerType.equals("Organization")) {
-        ourLog.warn("Performer is empty or not an Organization but: " + performerType);
+
+      // read Organization from PractitionerRole
+      if (performerType.equals("PractitionerRole")) {
+        srPerformer = getOrgFromRole(srPerformer);
+      }
+
+      if (!performerType.equals("Organization") && !performerType.equals("PractitionerRole")) {
+        ourLog.warn("Performer is empty or not an Organization or PractitionerRole but: " + performerType);
         return;
       }
 
-      final Reference srRequester = serviceRequest.getRequester();
+      Reference srRequester = serviceRequest.getRequester();
       final String requesterType = getReferenceType(srRequester.getReference());
-      if (!requesterType.equals("Organization")) {
-        ourLog.warn("Requester is empty or not an Organization but: " + requesterType);
+
+      // read Organization from PractitionerRole
+      if (requesterType.equals("PractitionerRole")) {
+        srRequester = getOrgFromRole(srRequester);
+      }
+
+      if (!requesterType.equals("Organization") && !requesterType.equals("PractitionerRole")) {
+        ourLog.warn("Requester is empty or not an Organization or PractitionerRole but: " + requesterType);
         return;
       }
 
@@ -700,6 +749,13 @@ public class PushInterceptor {
     }
 
     return rejectedTokens;
+  }
+
+  // reads Organization from PractitionerRole
+  private Reference getOrgFromRole(Reference practitionerRole) {
+    IFhirResourceDao<PractitionerRole> practitionerRoleDao = myDaoRegistry.getResourceDao("PractitionerRole");
+    PractitionerRole role = practitionerRoleDao.read(new IdType(practitionerRole.getReference()));
+    return role.getOrganization();
   }
 
 }
