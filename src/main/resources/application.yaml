@@ -159,3 +159,5 @@ hapi:
         version: 1
       auth:
         url: https://auth.amp.institute/auth/realms/HAPIFHIR
+      log:
+        measurements: true

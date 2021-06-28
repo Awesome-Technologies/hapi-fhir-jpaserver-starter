@@ -45,8 +45,11 @@ public class JpaRestfulServer extends BaseJpaRestfulServer {
      * Having one entry at the start and one at the end lets us measure the time
      * that is spent executing all other interceptor's hooks.
      */
-    PerformanceMeasurementInterceptor earlyMeasurementInterceptor = new PerformanceMeasurementInterceptor();
-    registerInterceptor(earlyMeasurementInterceptor);
+    final boolean logMeasurements = appProperties.getAmp().getLog().getMeasurements();
+    if (logMeasurements) {
+        PerformanceMeasurementInterceptor earlyMeasurementInterceptor = new PerformanceMeasurementInterceptor();
+        registerInterceptor(earlyMeasurementInterceptor);
+    }
 
     PushInterceptor pushInterceptor = new PushInterceptor(daoRegistry, appProperties.getAmp().getPush().getUrl(),
             appProperties.getAmp().getPush().getApp_id_normal(), appProperties.getAmp().getPush().getApp_id_voip());
@@ -81,7 +84,9 @@ public class JpaRestfulServer extends BaseJpaRestfulServer {
     /*
      * Add second performance logging interceptor
      */
-    PerformanceMeasurementInterceptor lateMeasurementInterceptor = new PerformanceMeasurementInterceptor();
-    registerInterceptor(lateMeasurementInterceptor);
+    if (logMeasurements) {
+        PerformanceMeasurementInterceptor lateMeasurementInterceptor = new PerformanceMeasurementInterceptor();
+        registerInterceptor(lateMeasurementInterceptor);
+    }
   }
 }

@@ -740,14 +740,16 @@ public static class Cors {
     private Push push = null;
     private Model model = null;
     private Auth auth = null;
+    private Log log = null;
 
     public Push getPush() {
       return push;
     }
-	    public void setPush(Push push) {
+
+    public void setPush(Push push) {
       this.push = push;
     }
-	      
+
     public Model getModel() {
       return model;
     }
@@ -763,12 +765,20 @@ public static class Cors {
       this.auth = auth;
     }
 
+    public Log getLog() {
+      return log;
+    }
+
+    public void setLog(Log log) {
+      this.log = log;
+    }
+
     public static class Push {
       private Integer version;
-	  private String url;
+      private String url;
       private String app_id_normal;
       private String app_id_voip;
-	    	
+
       public Integer getVersion() {
         return version;
       }
@@ -823,6 +833,18 @@ public static class Cors {
 
       public void setUrl(String url) {
         this.url = url;
+      }
+    }
+
+    public static class Log {
+      private boolean measurements;
+
+      public boolean getMeasurements() {
+        return measurements;
+      }
+
+      public void setMeasurements(boolean measurements) {
+        this.measurements = measurements;
       }
     }
   }
