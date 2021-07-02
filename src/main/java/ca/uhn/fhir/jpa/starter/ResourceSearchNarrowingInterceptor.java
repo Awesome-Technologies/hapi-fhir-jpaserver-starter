@@ -34,7 +34,6 @@ import ca.uhn.fhir.jpa.api.dao.DaoRegistry;
 import ca.uhn.fhir.jpa.api.dao.IFhirResourceDao;
 import ca.uhn.fhir.jpa.searchparam.SearchParameterMap;
 
-import ca.uhn.fhir.rest.api.server.IBundleProvider;
 import ca.uhn.fhir.rest.api.server.RequestDetails;
 import ca.uhn.fhir.rest.api.server.storage.ResourcePersistentId;
 import ca.uhn.fhir.rest.param.ReferenceParam;
@@ -52,6 +51,7 @@ import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Media;
 import org.hl7.fhir.r4.model.Observation;
 import org.hl7.fhir.r4.model.Organization;
+import org.hl7.fhir.r4.model.PractitionerRole;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
 
@@ -92,13 +92,24 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
     // get all organizations
     Set<IIdType> authorizedOrganizationList = new HashSet<>();
     Set<IIdType> organizationEndpointList = new HashSet<>();
-    IFhirResourceDao<?> organizationDao = myDaoRegistry.getResourceDao("Organization");
+    IFhirResourceDao<Organization> organizationDao = myDaoRegistry.getResourceDao("Organization");
+    IFhirResourceDao<PractitionerRole> practitionerRoleDao = myDaoRegistry.getResourceDao("PractitionerRole");
 
-    // check if our organizations can be found in the DAO
     for (IIdType myOrg : myOrgIds) {
-      IBaseResource orgRes = organizationDao.read(myOrg);
-      if (!orgRes.isEmpty()) {
-        authorizedOrganizationList.add(myOrg);
+      // check if our organizations can be found in the DAO
+      if (myOrg.getValue().startsWith("Organization")) {
+        IBaseResource orgRes = organizationDao.read(myOrg);
+        if (!orgRes.isEmpty()) {
+          authorizedOrganizationList.add(myOrg);
+        }
+      }
+
+      // check if our practitioner role can be found in the DAO
+      if (myOrg.getValue().startsWith("PractitionerRole")) {
+        IBaseResource practRoleRes = practitionerRoleDao.read(myOrg);
+        if (!practRoleRes.isEmpty()) {
+          authorizedOrganizationList.add(myOrg);
+        }
       }
     }
 

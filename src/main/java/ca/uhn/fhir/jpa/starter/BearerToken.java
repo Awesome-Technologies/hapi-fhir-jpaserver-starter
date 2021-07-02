@@ -41,7 +41,9 @@ import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.interfaces.RSAPublicKey;
@@ -156,7 +158,8 @@ public class BearerToken {
   }
 
   public List<IdType> getAuthorizedOrganizations(DaoRegistry theDaoRegistry) {
-    List<IdType> myOrgIds = new ArrayList<>();
+    // use a hashset to filter out duplicates
+    Set<IdType> myOrgIds = new HashSet<>();
     String fhirOrganization = jwt.getClaim("fhirOrganization").asString();
     String fhirUser = jwt.getClaim("fhirUser").asString();
 
@@ -181,11 +184,13 @@ public class BearerToken {
           }
         // add Organization of PractitionerRole
         myOrgIds.add(new IdType(((PractitionerRole) practitionerRole).getOrganization().getReference()));
+        // add PractitionerRole itself
+        myOrgIds.add(new IdType("PractitionerRole/" + ((PractitionerRole) practitionerRole).getIdElement().getIdPart().toString()));
       }
-
+     
       ourLog.info("Organizations " + myOrgIds.toString());
     }
 
-    return myOrgIds;
+    return new ArrayList<IdType>(myOrgIds);
   }
 }

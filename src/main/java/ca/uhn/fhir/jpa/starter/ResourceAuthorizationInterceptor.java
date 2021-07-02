@@ -40,17 +40,14 @@ import org.hl7.fhir.r4.model.Media;
 import org.hl7.fhir.r4.model.Observation;
 import org.hl7.fhir.r4.model.Organization;
 import org.hl7.fhir.r4.model.Patient;
+import org.hl7.fhir.r4.model.PractitionerRole;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
 import org.hl7.fhir.r4.model.ServiceRequest.ServiceRequestStatus;
-import org.hl7.fhir.r4.model.Communication.CommunicationStatus;
-
 import ca.uhn.fhir.jpa.api.dao.DaoRegistry;
 import ca.uhn.fhir.jpa.api.dao.IFhirResourceDao;
 import ca.uhn.fhir.jpa.searchparam.SearchParameterMap;
-import ca.uhn.fhir.model.primitive.IdDt;
 import ca.uhn.fhir.rest.api.RestOperationTypeEnum;
-import ca.uhn.fhir.rest.api.server.IBundleProvider;
 import ca.uhn.fhir.rest.api.server.RequestDetails;
 import ca.uhn.fhir.rest.param.ReferenceParam;
 import ca.uhn.fhir.rest.param.ReferenceOrListParam;
@@ -123,15 +120,27 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     Set<IIdType> authorizedOrganizationList = new HashSet<>();
     Set<IIdType> organizationEndpointList = new HashSet<>();
     IFhirResourceDao<Organization> organizationDao = myDaoRegistry.getResourceDao("Organization");
+    IFhirResourceDao<PractitionerRole> practitionerRoleDao = myDaoRegistry.getResourceDao("PractitionerRole");
 
-    // check if our organizations can be found in the DAO
     for (IIdType myOrg : myOrgIds) {
-      IBaseResource orgRes = organizationDao.read(myOrg);
-      if (!orgRes.isEmpty()) {
-        authorizedOrganizationList.add(myOrg);
-        List<Reference> endpoints = ((Organization) orgRes).getEndpoint();
-        for (Reference endpoint : endpoints) {
-          organizationEndpointList.add(endpoint.getReferenceElement());
+      // check if our organizations can be found in the DAO
+      if (myOrg.getValue().startsWith("Organization")) {
+        IBaseResource orgRes = organizationDao.read(myOrg);
+        if (!orgRes.isEmpty()) {
+          authorizedOrganizationList.add(myOrg);
+          // get connected endpoints
+          List<Reference> endpoints = ((Organization) orgRes).getEndpoint();
+          for (Reference endpoint : endpoints) {
+            organizationEndpointList.add(endpoint.getReferenceElement());
+          }
+        }
+      }
+
+      // check if our practitioner role can be found in the DAO
+      if (myOrg.getValue().startsWith("PractitionerRole")) {
+        IBaseResource practRoleRes = practitionerRoleDao.read(myOrg);
+        if (!practRoleRes.isEmpty()) {
+          authorizedOrganizationList.add(myOrg);
         }
       }
     }
@@ -435,18 +444,15 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
 
   private Set<IIdType> getCommunications(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
     Set<IIdType> authorizedCommunicationList = new HashSet<>();
-    ReferenceOrListParam orgReferences = new ReferenceOrListParam();
-
-    for (IIdType authorizedOrganization : authorizedOrganizationList) {
-      orgReferences.addOr(new ReferenceParam(authorizedOrganization.getValue()));
-    }
+    
+    ReferenceOrListParam authReferences = getAuthReferences(authorizedOrganizationList, theRequestDetails);
 
     // search all Communications for the organization
     IFhirResourceDao<Communication> communicationDao = myDaoRegistry.getResourceDao("Communication");
     SearchParameterMap senderParams = new SearchParameterMap();
-    senderParams.add(Communication.SP_SENDER, orgReferences);
+    senderParams.add(Communication.SP_SENDER, authReferences);
     SearchParameterMap recipientParams = new SearchParameterMap();
-    recipientParams.add(Communication.SP_RECIPIENT, orgReferences);
+    recipientParams.add(Communication.SP_RECIPIENT, authReferences);
 
     Set<ResourcePersistentId> searchAuthorizedCommunicationIdList = communicationDao.searchForIds(senderParams, theRequestDetails);
     for (ResourcePersistentId id : searchAuthorizedCommunicationIdList) {
@@ -582,16 +588,13 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
   private Set<IIdType> getServiceRequests(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
     IFhirResourceDao<ServiceRequest> serviceRequestdao = myDaoRegistry.getResourceDao("ServiceRequest");
     Set<IIdType> authorizedServiceRequestList = new HashSet<>();
-    ReferenceOrListParam orgReferences = new ReferenceOrListParam();
 
-    for (IIdType authorizedOrganization : authorizedOrganizationList) {
-      orgReferences.addOr(new ReferenceParam(authorizedOrganization.getValue()));
-    }
+    ReferenceOrListParam authReferences = getAuthReferences(authorizedOrganizationList, theRequestDetails);
 
     SearchParameterMap requesterParams = new SearchParameterMap();
-    requesterParams.add(ServiceRequest.SP_REQUESTER, orgReferences);
+    requesterParams.add(ServiceRequest.SP_REQUESTER, authReferences);
     SearchParameterMap performerParams = new SearchParameterMap();
-    performerParams.add(ServiceRequest.SP_PERFORMER, orgReferences);
+    performerParams.add(ServiceRequest.SP_PERFORMER, authReferences);
 
     Set<ResourcePersistentId> searchAuthorizedServiceRequestIdList = serviceRequestdao.searchForIds(performerParams, theRequestDetails);
 
@@ -802,5 +805,27 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     return ruleBuilder.allow("Read Coverage").read().allResources().inCompartment("Coverage", authorizedCoverageList).andThen()
                       .allow("Write Coverage").write().allResources().inCompartment("Coverage", authorizedCoverageList).andThen()
                       .denyAll("Deny all").build();
+  }
+  
+  private ReferenceOrListParam getAuthReferences(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
+    ReferenceOrListParam authReferences = new ReferenceOrListParam();
+
+    // add authorized Organizations
+    for (IIdType authorizedOrganization : authorizedOrganizationList) {
+      authReferences.addOr(new ReferenceParam(authorizedOrganization.getValue()));
+    }
+
+    // add authorized PractitionerRoles
+    IFhirResourceDao<PractitionerRole> practitionerRoleDao = myDaoRegistry.getResourceDao("PractitionerRole");
+    SearchParameterMap practitionerRoleParams = new SearchParameterMap();
+    practitionerRoleParams.add(PractitionerRole.SP_ORGANIZATION, authReferences);
+
+    Set<ResourcePersistentId> searchAuthorizedPractitionerRoleIdList = practitionerRoleDao.searchForIds(practitionerRoleParams, theRequestDetails);
+
+    for (ResourcePersistentId id : searchAuthorizedPractitionerRoleIdList) {
+      authReferences.add(new ReferenceParam("PractitionerRole/" + id.toString()));
+    }
+
+    return authReferences;
   }
 }
