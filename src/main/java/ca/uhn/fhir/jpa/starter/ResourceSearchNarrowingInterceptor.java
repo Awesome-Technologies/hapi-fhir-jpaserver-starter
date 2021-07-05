@@ -47,6 +47,7 @@ import org.hl7.fhir.instance.model.api.IIdType;
 import org.hl7.fhir.r4.model.Communication;
 import org.hl7.fhir.r4.model.Coverage;
 import org.hl7.fhir.r4.model.DiagnosticReport;
+import org.hl7.fhir.r4.model.DocumentReference;
 import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Media;
 import org.hl7.fhir.r4.model.Observation;
@@ -147,6 +148,9 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
         break;
       case "Media":
         authorizedResourceList = getMediaResources(orgReferences, theRequestDetails);
+        break;
+      case "DocumentReference":
+        authorizedResourceList = getDocumentReferenceResources(orgReferences, theRequestDetails);
         break;
       case "Observation":
         authorizedResourceList = getObservationResources(orgReferences, theRequestDetails);
@@ -366,5 +370,30 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
 
     // Allow all Coverages which are related to any authorized patient
     return authorizedCoverageList;
+  }
+  
+  private Set<String> getDocumentReferenceResources(ReferenceOrListParam orgReferences, RequestDetails theRequestDetails) {
+    Set<String> authorizedCommunications = getCommunicationResources(orgReferences, theRequestDetails);
+    Set<String> authorizedServiceRequestList = getServiceRequestResources(orgReferences, theRequestDetails);
+    ReferenceOrListParam srReferences = new ReferenceOrListParam();
+    Set<String> authorizedDocRefList = new HashSet<>();
+
+    for (String authorizedServiceRequest : authorizedServiceRequestList) {
+      srReferences.addOr(new ReferenceParam(authorizedServiceRequest));
+    }
+
+    // search all DocumentReferences that are related to authorized ServiceRequests
+    IFhirResourceDao<DocumentReference> docRefDao = myDaoRegistry.getResourceDao("DocumentReference");
+    SearchParameterMap relatedParams = new SearchParameterMap();
+    relatedParams.add(DocumentReference.SP_RELATED, srReferences);
+
+    Set<ResourcePersistentId> searchAuthorizedDocRefIdList = docRefDao.searchForIds(relatedParams, theRequestDetails);
+
+    for (ResourcePersistentId id : searchAuthorizedDocRefIdList) {
+      authorizedDocRefList.add("DocumentReference/" + id.toString());
+    }
+
+    // Allow all DocumentReferences which are related to any authorized ServiceRequest
+    return authorizedDocRefList;
   }
 }

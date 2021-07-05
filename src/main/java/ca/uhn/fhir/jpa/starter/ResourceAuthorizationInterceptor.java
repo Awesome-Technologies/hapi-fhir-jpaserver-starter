@@ -24,6 +24,7 @@
 
 package ca.uhn.fhir.jpa.starter;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -36,6 +37,7 @@ import org.hl7.fhir.r4.model.Communication;
 import org.hl7.fhir.r4.model.CommunicationRequest;
 import org.hl7.fhir.r4.model.Coverage;
 import org.hl7.fhir.r4.model.DiagnosticReport;
+import org.hl7.fhir.r4.model.DocumentReference;
 import org.hl7.fhir.r4.model.Media;
 import org.hl7.fhir.r4.model.Observation;
 import org.hl7.fhir.r4.model.Organization;
@@ -44,6 +46,9 @@ import org.hl7.fhir.r4.model.PractitionerRole;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
 import org.hl7.fhir.r4.model.ServiceRequest.ServiceRequestStatus;
+import org.hl7.fhir.r4.model.Communication.CommunicationPayloadComponent;
+import org.hl7.fhir.r4.model.Communication.CommunicationStatus;
+
 import ca.uhn.fhir.jpa.api.dao.DaoRegistry;
 import ca.uhn.fhir.jpa.api.dao.IFhirResourceDao;
 import ca.uhn.fhir.jpa.searchparam.SearchParameterMap;
@@ -248,6 +253,25 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
                         .allow("Create Media").create().resourcesOfType("Media").withAnyId().andThen()
                         .build();
             }
+        case "DocumentReference":
+            // read resource
+            final IBaseResource docRef = theRequestDetails.getResource();
+            if (docRef == null || !(docRef instanceof DocumentReference)) {
+              ourLog.warn("DocumentReference is not readable");
+              break;
+            }
+            final DocumentReference myDocRef = (DocumentReference) docRef;
+
+            // deny if corresponding serviceRequest is on_hold or completed
+            if (isServiceRequestReadOnly(myDocRef.getContext().getRelated())) {
+              return new RuleBuilder()
+                        .denyAll("Corresponding ServiceRequest is read only")
+                        .build();
+            } else {
+              return new RuleBuilder()
+                        .allow("Create DocumentReference").create().resourcesOfType("DocumentReference").withAnyId().andThen()
+                        .build();
+            }
         default: // deny per default
           return new RuleBuilder()
              .denyAll("Deny all")
@@ -297,6 +321,8 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
         return buildObservationRules(authorizedOrganizationList, theRequestDetails);
       case "Media":
         return buildMediaRules(authorizedOrganizationList, theRequestDetails);
+      case "DocumentReference":
+        return buildDocumentReferenceRules(authorizedOrganizationList, theRequestDetails);
       case "Coverage":
         return buildCoverageRules(authorizedOrganizationList, theRequestDetails);
       case "Practitioner":
@@ -782,7 +808,53 @@ public class ResourceAuthorizationInterceptor extends AuthorizationInterceptor {
     return ruleBuilder.denyAll("Deny all").build();
   }
 
+  private List<IAuthRule> buildDocumentReferenceRules(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
+    // search all DocumentReferences authorized for the organization
+    Set<IIdType> authorizedDocRefList = new HashSet<>();
+    Set<IIdType> authorizedDeletableDocRefList = new HashSet<>();
+    Set<IIdType> authorizedServiceRequestList = getServiceRequests(authorizedOrganizationList, theRequestDetails);
+    IFhirResourceDao<DocumentReference> docRefDao = myDaoRegistry.getResourceDao("DocumentReference");
+    IFhirResourceDao<Communication> comDao = myDaoRegistry.getResourceDao("Communication");
+    String requestResource = theRequestDetails.getRequestPath();
 
+    // read the DocumentReference resource
+    DocumentReference docRef = docRefDao.read(new IdType(requestResource));
+    List<Reference> relatedList = docRef.getContext().getRelated();
+    List<Reference> relatedSR = new ArrayList<Reference>();
+
+    // check if DocumentReference is connected with a ServiceRequest that the organization is authorized for
+    IAuthRuleBuilder ruleBuilder = new RuleBuilder();
+
+    for (IIdType authorizedSR : authorizedServiceRequestList) {
+      for (Reference relatedRef : relatedList) {
+        if (relatedRef != null && authorizedSR.getValue().equals(relatedRef.getReferenceElement().getValue())) {
+          authorizedDocRefList.add(new IdType(requestResource));
+          relatedSR.add(new Reference(authorizedSR.getValue()));
+
+          // the DocRef is not final and I am the author -> I am allowed to delete the DocumentReference
+          List<Reference> authorList = docRef.getAuthor();
+          for (IIdType authorizedOrganization : authorizedOrganizationList) {
+            for (Reference author : authorList) {
+              if (author.getReferenceElement().getValue().equals(authorizedOrganization.getValue()) && !docRef.getDocStatus().getDisplay().equals("Final")) {
+                authorizedDeletableDocRefList.add(new IdType(requestResource));
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // check if read only ServiceRequest should be updated
+    if(theRequestDetails.getRestOperationType().equals(RestOperationTypeEnum.UPDATE) && isServiceRequestReadOnly(relatedSR)) {
+      return ruleBuilder.denyAll("Corresponding ServiceRequest is read only").build();
+    } else {
+      return ruleBuilder.allow("Read DocumentReference").read().allResources().inCompartment("DocumentReference", authorizedDocRefList).andThen()
+                .allow("Write DocumentReference").write().allResources().inCompartment("DocumentReference", authorizedDocRefList).andThen()
+                .allow("Delete DocumentReference").delete().allResources().inCompartment("DocumentReference", authorizedDeletableDocRefList).andThen()
+                .denyAll("Deny all").build();
+    }
+  }
+  
   private List<IAuthRule> buildCoverageRules(Set<IIdType> authorizedOrganizationList, RequestDetails theRequestDetails) {
     Set<IIdType> authorizedCoverageList = new HashSet<>();
     Set<IIdType> authorizedPatientList = getPatients(authorizedOrganizationList, theRequestDetails);
