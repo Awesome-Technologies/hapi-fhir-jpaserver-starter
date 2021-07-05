@@ -48,6 +48,7 @@ class ResourceAuthorizationInterceptorTest {
   @Mock private IFhirResourceDao<Patient> patResourceDao;
   @Mock private IFhirResourceDao<ServiceRequest> serviceRequestDao;
   @Mock private IFhirResourceDao<Communication> communicationResourceDao;
+  @Mock private IFhirResourceDao<PractitionerRole> practRoleResourceDao;
 
   @Mock private RequestDetails requestDetails;
 
@@ -77,6 +78,7 @@ class ResourceAuthorizationInterceptorTest {
     lenient().when(mockRegistry.getResourceDao("Patient")).thenReturn(patResourceDao);
     lenient().when(mockRegistry.getResourceDao("ServiceRequest")).thenReturn(serviceRequestDao);
     lenient().when(mockRegistry.getResourceDao("Communication")).thenReturn(communicationResourceDao);
+    lenient().when(mockRegistry.getResourceDao("PractitionerRole")).thenReturn(practRoleResourceDao);
   }
 
   @BeforeEach
