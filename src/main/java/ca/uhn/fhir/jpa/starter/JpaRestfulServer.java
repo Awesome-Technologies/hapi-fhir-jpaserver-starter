@@ -82,6 +82,12 @@ public class JpaRestfulServer extends BaseJpaRestfulServer {
     registerInterceptor(forwardCaseInterceptor);
 
     /*
+     * Add interceptor for making DocumentReferences readonly
+     */
+    DocRefInterceptor docRefInterceptor = new DocRefInterceptor(daoRegistry);
+    registerInterceptor(docRefInterceptor);
+
+    /*
      * Add second performance logging interceptor
      */
     if (logMeasurements) {
