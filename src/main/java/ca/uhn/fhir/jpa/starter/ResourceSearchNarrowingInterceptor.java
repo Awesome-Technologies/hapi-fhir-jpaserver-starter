@@ -163,10 +163,6 @@ public class ResourceSearchNarrowingInterceptor extends SearchNarrowingIntercept
         return new AuthorizedList();
     }
 
-    if (authorizedResourceList.isEmpty()) {
-      throw new AuthenticationException("No authorization for accessing resources");
-    }
-
     return new AuthorizedList().addCompartments(authorizedResourceList.toArray(new String[0]));
   }
 
